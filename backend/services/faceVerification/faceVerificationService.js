@@ -9,12 +9,20 @@ function isDevelopmentMode() {
   return process.env.FACE_VERIFICATION_MODE === 'development';
 }
 
+function getFaceMatchThreshold() {
+  const value = process.env.FACE_MATCH_THRESHOLD;
+  if (typeof value !== 'string' || !value.trim()) return null;
+
+  const threshold = Number(value);
+  return Number.isFinite(threshold) && threshold >= 0 ? threshold : null;
+}
+
 function getProviderStatus() {
   return {
     configured: process.env.FACE_ENGINE === 'wasm',
     engine: process.env.FACE_ENGINE || 'unconfigured',
     mode: isDevelopmentMode() ? 'development-test-only' : 'provider-required',
-    thresholdConfigured: Boolean(process.env.FACE_MATCH_THRESHOLD),
+    thresholdConfigured: getFaceMatchThreshold() !== null,
     initialized: false
   };
 }
@@ -124,8 +132,8 @@ async function verifyFace({ student, imageBuffer, referenceData }) {
   let engine;
   try { engine = await getEngine(); } catch (error) { return { configured: false, verified: false, status: 'SERVICE_UNAVAILABLE', reason: 'SERVICE_UNAVAILABLE', error }; }
   const metric = engine.faceApi.euclideanDistance(Float32Array.from(referenceData), Float32Array.from(result.descriptor));
-  const threshold = Number(process.env.FACE_MATCH_THRESHOLD);
-  if (!Number.isFinite(threshold)) return { configured: true, verified: false, status: 'THRESHOLD_NOT_CONFIGURED', reason: 'THRESHOLD_NOT_CONFIGURED', metric, threshold: null };
+  const threshold = getFaceMatchThreshold();
+  if (threshold === null) return { configured: true, verified: false, status: 'THRESHOLD_NOT_CONFIGURED', reason: 'THRESHOLD_NOT_CONFIGURED', metric, threshold: null };
   const verified = metric <= threshold;
   return { configured: true, verified, status: verified ? 'VERIFIED' : 'FACE_MISMATCH', reason: verified ? 'VERIFIED' : 'FACE_MISMATCH', metric, threshold };
 }

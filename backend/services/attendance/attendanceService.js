@@ -17,8 +17,10 @@ const TRANSITIONS = {
   OUTSIDE: { type: 'ENTRY', nextState: 'IN_CLASS' }
 };
 
-async function findOrCreateRecord(student, session) {
+async function findOrCreateRecord(student, session, transactionSession) {
   try {
+    const options = { new: true, upsert: true, setDefaultsOnInsert: true };
+    if (transactionSession) options.session = transactionSession;
     return await AttendanceRecord.findOneAndUpdate(
       { studentId: student._id, sessionId: session._id },
       {
@@ -30,18 +32,20 @@ async function findOrCreateRecord(student, session) {
           currentState: 'NOT_SCANNED'
         }
       },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
+      options
     );
   } catch (error) {
     if (error.code !== 11000) throw error;
-    return AttendanceRecord.findOne({ studentId: student._id, sessionId: session._id });
+    const query = AttendanceRecord.findOne({ studentId: student._id, sessionId: session._id });
+    if (transactionSession) query.session(transactionSession);
+    return query;
   }
 }
 
 async function processScan({ rfidUid, faceVerified, imageBuffer, sessionId }) {
   if (typeof rfidUid !== 'string' || !rfidUid.trim()) throw new AppError('rfidUid is required', 400);
 
-  const student = await Student.findOne({ rfidUid: rfidUid.trim().toUpperCase() });
+  const student = await Student.findOne({ rfidUid: rfidUid.trim().toUpperCase(), isActive: true });
   if (!student) throw new AppError('RFID not recognized', 404);
 
   const faceReference = await FaceReference.findOne({ studentId: student._id, isActive: true }).select('+referenceData');
@@ -63,24 +67,50 @@ async function processScan({ rfidUid, faceVerified, imageBuffer, sessionId }) {
     throw new AppError('Student does not belong to this session class', 403);
   }
 
-  const record = await findOrCreateRecord(student, session);
-  const transition = TRANSITIONS[record.currentState];
-  const updatedRecord = await AttendanceRecord.findOneAndUpdate(
-    { _id: record._id, currentState: record.currentState, finalStatus: null },
-    { $set: { currentState: transition.nextState } },
-    { new: true }
-  );
-  if (!updatedRecord) throw new AppError('Attendance record changed; please retry the scan', 409);
+  let updatedRecord;
+  let event;
+  const transactionSession = await mongoose.startSession();
+  try {
+    await transactionSession.withTransaction(async () => {
+      const activeSession = await AttendanceSession.findOne({ _id: session._id, status: 'ACTIVE' })
+        .session(transactionSession);
+      if (!activeSession) throw new AppError('No active attendance session found', 404);
 
-  const event = await AttendanceEvent.create({
-    studentId: student._id,
-    sessionId: session._id,
-    type: transition.type,
-    timestamp: new Date(),
-    rfidUid: student.rfidUid,
-    faceVerified: true,
-    verificationStatus: 'VERIFIED'
-  });
+      const sessionLock = await AttendanceSession.updateOne(
+        { _id: activeSession._id, status: 'ACTIVE' },
+        { $inc: { __v: 1 } },
+        { session: transactionSession }
+      );
+      if (sessionLock.matchedCount !== 1) throw new AppError('No active attendance session found', 404);
+
+      const activeSessionClassId = activeSession.classId._id || activeSession.classId;
+      if (String(activeSessionClassId) !== String(student.classId)) {
+        throw new AppError('Student does not belong to this session class', 403);
+      }
+
+      const record = await findOrCreateRecord(student, activeSession, transactionSession);
+      const transition = TRANSITIONS[record.currentState];
+      updatedRecord = await AttendanceRecord.findOneAndUpdate(
+        { _id: record._id, currentState: record.currentState, finalStatus: null },
+        { $set: { currentState: transition.nextState } },
+        { new: true, session: transactionSession }
+      );
+      if (!updatedRecord) throw new AppError('Attendance record changed; please retry the scan', 409);
+
+      [event] = await AttendanceEvent.create([{
+        studentId: student._id,
+        sessionId: activeSession._id,
+        type: transition.type,
+        timestamp: new Date(),
+        rfidUid: student.rfidUid,
+        faceVerified: true,
+        verificationStatus: 'VERIFIED'
+      }], { session: transactionSession });
+    });
+  } finally {
+    await transactionSession.endSession();
+  }
+
   const attendance = await subjectSummary(student._id, sessionSubjectId);
 
   return { student, session, record: updatedRecord, event, attendance };
@@ -88,25 +118,53 @@ async function processScan({ rfidUid, faceVerified, imageBuffer, sessionId }) {
 
 async function closeSession(sessionId) {
   if (!mongoose.isValidObjectId(sessionId)) throw new AppError('Invalid session id', 400);
-  const session = await AttendanceSession.findById(sessionId);
-  if (!session) throw new AppError('Attendance session not found', 404);
-  if (session.status !== 'ACTIVE') throw new AppError('Attendance session is already closed', 409);
+  let closedSession;
+  const transactionSession = await mongoose.startSession();
+  try {
+    await transactionSession.withTransaction(async () => {
+      const session = await AttendanceSession.findById(sessionId).session(transactionSession);
+      if (!session) throw new AppError('Attendance session not found', 404);
+      if (session.status !== 'ACTIVE') throw new AppError('Attendance session is already closed', 409);
 
-  const students = await Student.find({ classId: session.classId, isActive: { $ne: false } });
-  for (const student of students) {
-    const record = await findOrCreateRecord(student, session);
-    const finalState = record.currentState;
-    const finalStatus = finalState === 'IN_CLASS' ? 'PRESENT' : finalState === 'OUTSIDE' ? 'LEFT_EARLY' : 'ABSENT';
-    await AttendanceRecord.updateOne(
-      { _id: record._id, finalStatus: null },
-      { $set: { finalState, finalStatus } }
-    );
+      const sessionLock = await AttendanceSession.updateOne(
+        { _id: session._id, status: 'ACTIVE' },
+        { $inc: { __v: 1 } },
+        { session: transactionSession }
+      );
+      if (sessionLock.matchedCount !== 1) throw new AppError('Attendance session is already closed', 409);
+
+      const students = await Student.find({
+        classId: session.classId,
+        isActive: { $ne: false }
+      }).session(transactionSession);
+      for (const student of students) {
+        const record = await findOrCreateRecord(student, session, transactionSession);
+        const finalState = record.currentState;
+        const finalStatus = finalState === 'IN_CLASS' ? 'PRESENT' : finalState === 'OUTSIDE' ? 'LEFT_EARLY' : 'ABSENT';
+        await AttendanceRecord.updateOne(
+          { _id: record._id, finalStatus: null },
+          { $set: { finalState, finalStatus } },
+          { session: transactionSession }
+        );
+      }
+
+      closedSession = await AttendanceSession.findOneAndUpdate(
+        { _id: session._id, status: 'ACTIVE' },
+        {
+          $set: {
+            status: 'CLOSED',
+            endTime: new Date().toISOString().slice(11, 16)
+          },
+          $inc: { __v: 1 }
+        },
+        { new: true, session: transactionSession }
+      );
+      if (!closedSession) throw new AppError('Attendance session is already closed', 409);
+    });
+  } finally {
+    await transactionSession.endSession();
   }
-
-  session.status = 'CLOSED';
-  session.endTime = new Date().toISOString().slice(11, 16);
-  await session.save();
-  return session;
+  return closedSession;
 }
 
 module.exports = { processScan, closeSession };
