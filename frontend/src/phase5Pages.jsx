@@ -13,13 +13,17 @@ function FormField({ label, children }) { return <label className="form-field">{
 function entityFormValues(type, initial) {
   if (type === 'classes') return { name: initial?.name || '', section: initial?.section || '', academicYear: initial?.academicYear || '' };
   if (type === 'subjects') return { name: initial?.name || '', code: initial?.code || '', description: initial?.description || '' };
-  return { name: initial?.name || '', employeeId: initial?.employeeId || '', ...(initial ? {} : { email: '' }) };
+  return { name: initial?.name || '', employeeId: initial?.employeeId || '', email: initial?.userId?.email || '', password: '' };
 }
 
 function EntityForm({ type, initial, onClose, onSaved }) {
   const [form, setForm] = useState(() => entityFormValues(type, initial));
   const [error, setError] = useState(''); const [saving, setSaving] = useState(false);
-  const fields = type === 'classes' ? [['name', 'Class name'], ['section', 'Section'], ['academicYear', 'Academic year']] : type === 'subjects' ? [['name', 'Subject name'], ['code', 'Subject code'], ['description', 'Description']] : [['name', 'Teacher name'], ['employeeId', 'Employee ID'], ...(!initial ? [['email', 'Email (optional)']] : [])];
+  const fields = type === 'classes'
+    ? [['name', 'Class name'], ['section', 'Section'], ['academicYear', 'Academic year']]
+    : type === 'subjects'
+      ? [['name', 'Subject name'], ['code', 'Subject code'], ['description', 'Description']]
+      : [['name', 'Teacher name'], ['employeeId', 'Employee ID'], ['email', 'Account email'], ['password', initial ? 'Reset password (leave blank to keep current)' : 'Initial password (minimum 12 characters)']];
   const save = async (event) => {
     event.preventDefault(); setSaving(true); setError('');
     try {
@@ -36,7 +40,7 @@ function EntityForm({ type, initial, onClose, onSaved }) {
     }
   };
   const label = type === 'classes' ? 'class' : type === 'subjects' ? 'subject' : 'teacher';
-  return <Modal title={`${initial ? 'Edit' : 'Add'} ${label}`} onClose={onClose}><form className="form-grid" onSubmit={save}>{fields.map(([key, fieldLabel]) => <FormField key={key} label={fieldLabel}><input required={key !== 'description' && key !== 'email'} type={key === 'email' ? 'email' : 'text'} value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} /></FormField>)}{initial?.userId?.email && <div className="enrollment-note"><strong>Account email</strong><span>{initial.userId.email} · account credentials are managed separately.</span></div>}{error && <div className="form-error">{error}</div>}<div className="form-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button primary" disabled={saving}>{saving ? 'Saving...' : initial ? 'Save changes' : 'Create record'}</button></div></form></Modal>;
+  return <Modal title={`${initial ? 'Edit' : 'Add'} ${label}`} onClose={onClose}><form className="form-grid" onSubmit={save}>{fields.map(([key, fieldLabel]) => <FormField key={key} label={fieldLabel}><input required={key === 'password' ? !initial : key !== 'description'} minLength={key === 'password' ? 12 : undefined} autoComplete={key === 'password' ? 'new-password' : undefined} type={key === 'email' ? 'email' : key === 'password' ? 'password' : 'text'} value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} /></FormField>)}{error && <div className="form-error">{error}</div>}<div className="form-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button primary" disabled={saving}>{saving ? 'Saving...' : initial ? 'Save changes' : 'Create record'}</button></div></form></Modal>;
 }
 
 export function SetupCenter() {
@@ -132,7 +136,9 @@ function StudentForm({ classes, initial, onClose, onSaved }) {
     name: initial?.name || '',
     rollNumber: initial?.rollNumber || '',
     classId: initial?.classId?._id || initial?.classId || '',
-    rfidUid: initial?.rfidUid || ''
+    rfidUid: initial?.rfidUid || '',
+    email: initial?.userId?.email || '',
+    password: ''
   }));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -141,7 +147,14 @@ function StudentForm({ classes, initial, onClose, onSaved }) {
     setSaving(true);
     setError('');
     try {
-      if (initial?._id) await api.updateStudent(initial._id, form);
+      if (initial?._id) await api.updateStudent(initial._id, {
+        name: form.name,
+        rollNumber: form.rollNumber,
+        classId: form.classId,
+        rfidUid: form.rfidUid,
+        email: form.email,
+        password: form.password
+      });
       else await api.createStudent(form);
       await onSaved();
       onClose();
@@ -157,6 +170,8 @@ function StudentForm({ classes, initial, onClose, onSaved }) {
       <FormField label="Roll number"><input required value={form.rollNumber} onChange={(event) => setForm({ ...form, rollNumber: event.target.value })} /></FormField>
       <FormField label="Class"><select required value={form.classId} onChange={(event) => setForm({ ...form, classId: event.target.value })}><option value="">Select class</option>{classes.map((item) => <option key={item._id} value={item._id}>{item.name} / {item.section}</option>)}</select></FormField>
       <FormField label="RFID UID · manual development registration"><input required value={form.rfidUid} onChange={(event) => setForm({ ...form, rfidUid: event.target.value })} placeholder="Enter UID from future ESP32 scan" /></FormField>
+      <FormField label="Account email"><input type="email" autoComplete="username" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></FormField>
+      <FormField label={initial ? 'Reset password (leave blank to keep current)' : 'Initial password (minimum 12 characters)'}><input type="password" autoComplete="new-password" minLength={form.password ? 12 : undefined} required={!initial} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></FormField>
       <div className="enrollment-note"><strong>Face: {initial ? 'enrollment managed separately' : 'Not enrolled'}</strong><span>Face data is managed through the face enrollment page and is not changed here.</span></div>
       {error && <div className="form-error" role="alert">{error}</div>}
       <div className="form-actions"><button type="button" className="button secondary" onClick={onClose}>Cancel</button><button className="button primary" disabled={saving || !classes.length}>{saving ? 'Saving...' : initial ? 'Save changes' : 'Save student'}</button></div>

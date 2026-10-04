@@ -77,11 +77,25 @@ async function register(filters) {
       query[field] = filters[field];
     }
   }
+  if (filters.teacherId) {
+    assertId(filters.teacherId, 'teacherId');
+    const sessions = await AttendanceSession.find({ teacherId: filters.teacherId }).select('_id');
+    const teacherSessionIds = sessions.map((session) => session._id);
+    if (filters.sessionId) {
+      query.$and = [
+        { sessionId: filters.sessionId },
+        { sessionId: { $in: teacherSessionIds } }
+      ];
+      delete query.sessionId;
+    } else {
+      query.sessionId = { $in: teacherSessionIds };
+    }
+  }
   if (filters.classId) {
     const sessions = await AttendanceSession.find({ classId: filters.classId }).select('_id');
     const classSessionIds = sessions.map((session) => session._id);
     if (query.sessionId) {
-      query.$and = [
+      query.$and = [...(query.$and || []),
         { sessionId: query.sessionId },
         { sessionId: { $in: classSessionIds } }
       ];

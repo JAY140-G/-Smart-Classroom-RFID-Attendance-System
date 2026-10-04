@@ -4,14 +4,19 @@ const { startSession, getActiveSession } = require('../services/attendance/sessi
 const { processScan, closeSession } = require('../services/attendance/attendanceService');
 const { subjectSummary, studentSummary, register } = require('../services/attendance/attendanceAnalyticsService');
 const { getLiveAttendance } = require('../services/attendance/liveAttendanceService');
+const Student = require('../models/Student');
+const AppError = require('../utils/AppError');
 
 async function start(req, res) {
-  const session = await startSession(req.body.timetableId);
+  const session = await startSession(req.body.timetableId, { teacherId: req.auth.teacherId });
   res.status(201).json({ success: true, message: 'Attendance session started', data: session });
 }
 
 async function active(req, res) {
-  const session = await getActiveSession(req.query);
+  const session = await getActiveSession({
+    ...req.query,
+    ...(req.auth.teacherId ? { teacherId: req.auth.teacherId } : {})
+  });
   res.status(200).json({ success: true, data: session });
 }
 
@@ -35,7 +40,7 @@ async function scan(req, res) {
 }
 
 async function close(req, res) {
-  const session = await closeSession(req.params.id);
+  const session = await closeSession(req.params.id, { teacherId: req.auth.teacherId });
   res.status(200).json({ success: true, message: 'Attendance session closed', data: session });
 }
 
@@ -49,14 +54,21 @@ async function student(req, res) {
   res.status(200).json({ success: true, data: summaries });
 }
 
+async function me(req, res) {
+  const student = await Student.findOne({ userId: req.auth.user._id, isActive: true });
+  if (!student) throw new AppError('Student account is not linked', 403);
+  const summaries = await studentSummary(student._id);
+  res.status(200).json({ success: true, data: summaries });
+}
+
 async function live(req, res) {
   const data = await getLiveAttendance(req.params.sessionId);
   res.status(200).json({ success: true, data });
 }
 
 async function attendanceRegister(req, res) {
-  const records = await register(req.query);
+  const records = await register({ ...req.query, teacherId: req.auth.teacherId });
   res.status(200).json({ success: true, data: records });
 }
 
-module.exports = { start, active, scan, close, subject, student, live, attendanceRegister };
+module.exports = { start, active, scan, close, subject, student, me, live, attendanceRegister };

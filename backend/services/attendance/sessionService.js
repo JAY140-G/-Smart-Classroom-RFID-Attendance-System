@@ -25,10 +25,13 @@ function populateSession(query) {
   ]);
 }
 
-async function startSession(timetableId) {
+async function startSession(timetableId, { teacherId } = {}) {
   if (!mongoose.isValidObjectId(timetableId)) throw new AppError('Invalid timetable id', 400);
   const timetable = await Timetable.findOne({ _id: timetableId, isActive: true });
   if (!timetable) throw new AppError('Active timetable not found', 404);
+  if (teacherId && String(timetable.teacherId) !== String(teacherId)) {
+    throw new AppError('You can start sessions only for your assigned timetable', 403);
+  }
 
   const now = new Date();
   if (timetable.dayOfWeek !== getDayName(now)) {

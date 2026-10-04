@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { setAccessToken } from '../src/auth.js';
 import api from '../src/services/api.js';
 
 const entityApis = [
@@ -30,3 +31,29 @@ for (const [entity, update, remove, path] of entityApis) {
     assert.equal(requests[1].options.method, 'DELETE');
   });
 }
+
+test('authenticated API requests include the session bearer token', async (t) => {
+  const previousWindow = globalThis.window;
+  const values = new Map();
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {
+      sessionStorage: {
+        getItem: (key) => values.get(key) || null,
+        setItem: (key, value) => values.set(key, value),
+        removeItem: (key) => values.delete(key)
+      },
+      dispatchEvent: () => true
+    }
+  });
+  t.after(() => {
+    if (previousWindow === undefined) delete globalThis.window;
+    else Object.defineProperty(globalThis, 'window', { configurable: true, value: previousWindow });
+  });
+  t.mock.method(globalThis, 'fetch', async () => ({ ok: true, json: async () => ({ success: true, data: { user: { role: 'ADMIN' } } }) }));
+  setAccessToken('test-session-token');
+
+  await api.currentUser();
+
+  assert.equal(fetch.mock.calls[0].arguments[1].headers.Authorization, 'Bearer test-session-token');
+});

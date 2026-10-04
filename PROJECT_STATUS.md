@@ -16,7 +16,7 @@
 - [x] Model relationships
 - [x] Indexes and constraints
 - [x] Database health check
-- Attendance services, setup CRUD APIs, face verification, and frontend surfaces were added in later phases. Production authentication and hardware firmware remain incomplete.
+- Attendance services, setup CRUD APIs, face verification, and frontend surfaces were added in later phases. Authentication security hardening and hardware firmware remain incomplete.
 
 ### Phase 3 Attendance and Timetable Logic
 - [x] Timetable CRUD and conflict validation
@@ -27,7 +27,7 @@
 - [x] Session finalization to PRESENT, LEFT_EARLY, or ABSENT
 - [x] Subject-wise attendance calculation
 - [x] Live attendance and register endpoints
-- Face verification and frontend attendance surfaces were implemented in later phases. Production authentication, hardware communication, and notifications remain incomplete.
+- Face verification, frontend attendance, and initial role-based authentication were implemented in later phases. Authentication hardening, hardware communication, and notifications remain incomplete.
 
 ### Planning
 - [x] Final project concept
@@ -47,7 +47,7 @@
 - [x] Attendance register and subject reports
 - [x] Student attendance and history views
 - [x] Loading, error, empty, and unavailable states
-- The demo role selector is not production authentication. Student, teacher, subject, and class setup workflows now use the existing backend CRUD APIs.
+- Login is credential-based, but deployment hardening is still required. Student, teacher, subject, and class setup workflows use the existing backend CRUD APIs.
 
 ### Phase 5 Face Verification Foundation and Enrollment Architecture
 - [x] Enrollment-ready face reference model
@@ -81,7 +81,7 @@
 - [x] Multipart face verification API boundary
 - [x] Actual WASM face verification integration
 - [ ] Face threshold calibration
-- [ ] Authentication
+- [x] Authentication and role-based backend authorization foundation
 - [ ] Reports
 
 ### Frontend
@@ -122,7 +122,16 @@
 - [x] Added a database-free Node.js test suite for attendance scan validation, face-verification gating, state transitions, receipt replay/conflicts, transactional write paths, and duplicate-key race handling.
 - [x] Added `npm test` for the backend.
 - Tests use mocked Mongoose operations. They do not prove MongoDB transaction behavior against Atlas and do not create attendance records.
-- Backend transaction integration testing, production authentication/authorization, calibrated face threshold, physical RFID debounce, firmware, and hardware validation remain incomplete.
+- Backend transaction integration testing, authentication deployment hardening, calibrated face threshold, physical RFID debounce, firmware, and hardware validation remain incomplete.
+
+### Authentication and Role Authorization (2026-10-04)
+- [x] Added one-time, secret-gated initial administrator bootstrap.
+- [x] Added scrypt password hashing, eight-hour opaque bearer sessions, hashed session-token persistence, expiry, current-user lookup, and logout revocation.
+- [x] Protected setup, timetable, face, and attendance endpoints with backend role checks; students are limited to their own attendance, and teachers are limited to assigned timetables/sessions/classes.
+- [x] Replaced the demo role selector with an email/password login and role-directed navigation.
+- [x] New student and teacher accounts require email and initial password; passwords are not returned from entity APIs.
+- [x] Attendance scan requests now fail closed unless the separate device key is configured.
+- Existing teacher/student accounts created with `AUTH_NOT_IMPLEMENTED` cannot sign in until an administrator resets their password and email. Self-service recovery, MFA, rate limiting, per-device credentials, deployment HTTPS/CORS configuration, and live Atlas validation remain outstanding.
 
 ### Setup and Dashboard Progress
 - [x] Student setup supports create, edit, deactivate/reactivate, and guarded deletion.
@@ -130,5 +139,5 @@
 - [x] Teacher setup supports create, edit, and backend-guarded deletion. Teacher deactivation is not available because the current Teacher model has no active-status field.
 - [x] Setup Center counts show loading and request-failure states instead of treating failed requests as empty collections.
 - [x] Dashboard student, teacher, and active-subject counts load from existing APIs and show request failures honestly.
-- [x] Added four mocked-fetch frontend API tests covering update/delete method and route mapping for students, teachers, subjects, and classes.
+- [x] Added mocked-fetch frontend API tests covering CRUD endpoint mapping and bearer-token forwarding.
 - Verification: frontend production build passed; frontend API tests passed (4/4); lint completed with existing warnings for unused imports/props and hook dependency/state-in-effect patterns. These checks do not validate a live backend, database, authentication, or hardware integration.

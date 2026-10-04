@@ -5,6 +5,15 @@ const multer = require('multer');
 const AppError = require('../utils/AppError');
 const asyncHandler = require('../utils/asyncHandler');
 const controller = require('../controllers/attendanceController');
+const {
+  requireAuth,
+  allowRoles,
+  requireDeviceKey,
+  requireStudentSelf,
+  scopeTeacher,
+  authorizeTeacherSession,
+  authorizeTeacherStudent
+} = require('../middleware/authentication');
 
 const router = express.Router();
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -23,13 +32,14 @@ function validateIdempotencyKey(req, res, next) {
   return next();
 }
 
-router.post('/session/start', asyncHandler(controller.start));
-router.get('/session/active', asyncHandler(controller.active));
-router.post('/session/:id/close', asyncHandler(controller.close));
-router.post('/scan', validateIdempotencyKey, scanUpload.single('image'), asyncHandler(controller.scan));
-router.get('/live/:sessionId', asyncHandler(controller.live));
-router.get('/student/:studentId/subject/:subjectId', asyncHandler(controller.subject));
-router.get('/student/:studentId', asyncHandler(controller.student));
-router.get('/register', asyncHandler(controller.attendanceRegister));
+router.post('/session/start', requireAuth, allowRoles('ADMIN', 'TEACHER'), scopeTeacher, asyncHandler(controller.start));
+router.get('/session/active', requireAuth, allowRoles('ADMIN', 'TEACHER'), scopeTeacher, asyncHandler(controller.active));
+router.post('/session/:id/close', requireAuth, allowRoles('ADMIN', 'TEACHER'), scopeTeacher, asyncHandler(controller.close));
+router.post('/scan', requireDeviceKey, validateIdempotencyKey, scanUpload.single('image'), asyncHandler(controller.scan));
+router.get('/live/:sessionId', requireAuth, allowRoles('ADMIN', 'TEACHER'), scopeTeacher, authorizeTeacherSession, asyncHandler(controller.live));
+router.get('/me', requireAuth, allowRoles('STUDENT'), asyncHandler(controller.me));
+router.get('/student/:studentId/subject/:subjectId', requireAuth, allowRoles('ADMIN', 'TEACHER', 'STUDENT'), scopeTeacher, authorizeTeacherStudent, requireStudentSelf(), asyncHandler(controller.subject));
+router.get('/student/:studentId', requireAuth, allowRoles('ADMIN', 'TEACHER', 'STUDENT'), scopeTeacher, authorizeTeacherStudent, requireStudentSelf(), asyncHandler(controller.student));
+router.get('/register', requireAuth, allowRoles('ADMIN', 'TEACHER'), scopeTeacher, asyncHandler(controller.attendanceRegister));
 
 module.exports = router;

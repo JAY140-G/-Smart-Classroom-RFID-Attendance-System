@@ -193,7 +193,7 @@ async function processScan({ rfidUid, faceVerified, imageBuffer, sessionId, idem
   return scanResult;
 }
 
-async function closeSession(sessionId) {
+async function closeSession(sessionId, { teacherId } = {}) {
   if (!mongoose.isValidObjectId(sessionId)) throw new AppError('Invalid session id', 400);
   let closedSession;
   const transactionSession = await mongoose.startSession();
@@ -201,6 +201,9 @@ async function closeSession(sessionId) {
     await transactionSession.withTransaction(async () => {
       const session = await AttendanceSession.findById(sessionId).session(transactionSession);
       if (!session) throw new AppError('Attendance session not found', 404);
+      if (teacherId && String(session.teacherId) !== String(teacherId)) {
+        throw new AppError('You can close only your own attendance sessions', 403);
+      }
       if (session.status !== 'ACTIVE') throw new AppError('Attendance session is already closed', 409);
 
       const sessionLock = await AttendanceSession.updateOne(

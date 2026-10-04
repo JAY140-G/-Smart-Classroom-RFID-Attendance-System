@@ -8,7 +8,10 @@ async function create(req, res) {
 }
 
 async function list(req, res) {
-  const timetables = await timetableService.listTimetables(req.query);
+  const timetables = await timetableService.listTimetables({
+    ...req.query,
+    ...(req.auth.teacherId ? { teacherId: req.auth.teacherId } : {})
+  });
   res.status(200).json({ success: true, data: timetables });
 }
 

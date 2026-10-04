@@ -12,9 +12,10 @@ const AttendanceRecord = require('../models/AttendanceRecord');
 const AttendanceEvent = require('../models/AttendanceEvent');
 const FaceReference = require('../models/FaceReference');
 const AppError = require('../utils/AppError');
+const { hashPassword } = require('./authService');
 
 const definitions = {
-  students: { model: Student, populate: 'classId', fields: 'name rollNumber classId rfidUid isActive userId' },
+  students: { model: Student, populate: [{ path: 'classId' }, { path: 'userId', select: 'name email role' }], fields: 'name rollNumber classId rfidUid isActive userId' },
     teachers: { model: Teacher, populate: { path: 'userId', select: 'name email role' }, fields: 'name employeeId userId' },
   subjects: { model: Subject },
   classes: { model: ClassModel }
@@ -49,15 +50,22 @@ async function get(type, id) {
   return value;
 }
 
-async function ensureUser({ userId, name, email, role, uniqueValue }) {
+async function ensureUser({ userId, name, email, password, role, uniqueValue }) {
   if (userId) {
     assertId(userId, 'userId');
     const user = await User.findById(userId);
     if (!user) throw new AppError('User not found', 404);
+    if (user.role !== role) throw new AppError(`User must have the ${role} role`, 400);
     return user._id;
   }
-  const normalizedEmail = (email || `${role.toLowerCase()}-${String(uniqueValue).toLowerCase()}@local.invalid`).toLowerCase();
-  const user = await User.create({ name, email: normalizedEmail, password: 'AUTH_NOT_IMPLEMENTED', role });
+  if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+    throw new AppError('A valid email is required for the new account', 400);
+  }
+  if (typeof password !== 'string' || password.length < 12 || password.length > 256) {
+    throw new AppError('A password between 12 and 256 characters is required for the new account', 400);
+  }
+  const normalizedEmail = email.trim().toLowerCase();
+  const user = await User.create({ name, email: normalizedEmail, password: await hashPassword(password), role });
   return user._id;
 }
 
@@ -74,6 +82,8 @@ async function create(type, input) {
     if (!data.name || !data.employeeId) throw new AppError('name and employeeId are required', 400);
     data.userId = await ensureUser({ ...data, role: 'TEACHER', uniqueValue: data.employeeId });
   }
+  delete data.password;
+  delete data.email;
   if (type === 'subjects' && !data.name) throw new AppError('name is required', 400);
   if (type === 'classes' && (!data.name || !data.section || !data.academicYear)) throw new AppError('name, section, and academicYear are required', 400);
   const created = await item.model.create(data);
@@ -88,12 +98,35 @@ async function update(type, id, input) {
   const data = { ...input };
   delete data._id;
   delete data.userId;
+  const email = data.email;
+  const password = data.password;
+  delete data.email;
+  delete data.password;
+  let passwordHash;
+  if (type === 'students' || type === 'teachers') {
+    if (email !== undefined && (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()))) {
+      throw new AppError('A valid account email is required', 400);
+    }
+    if (password !== undefined && password !== '' && (typeof password !== 'string' || password.length < 12 || password.length > 256)) {
+      throw new AppError('Password must be between 12 and 256 characters', 400);
+    }
+    if (password) passwordHash = await hashPassword(password);
+  }
   if (type === 'students' && data.classId) {
     assertId(data.classId, 'classId');
     if (!await ClassModel.exists({ _id: data.classId, isActive: true })) throw new AppError('Active class not found', 404);
   }
   Object.assign(existing, data);
   await existing.save();
+  if (type === 'students' || type === 'teachers') {
+    const accountChanges = {};
+    if (data.name) accountChanges.name = data.name;
+    if (email !== undefined) accountChanges.email = email.trim().toLowerCase();
+    if (passwordHash) accountChanges.password = passwordHash;
+    if (Object.keys(accountChanges).length) {
+      await User.updateOne({ _id: existing.userId }, { $set: accountChanges });
+    }
+  }
   return get(type, id);
 }
 

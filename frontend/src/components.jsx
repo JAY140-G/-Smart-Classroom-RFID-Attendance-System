@@ -1,4 +1,8 @@
+import { useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { useAuth } from './AuthContext';
+import api from './services/api';
+import { clearAccessToken } from './auth';
 
 const navGroups = [
   { label: 'Overview', items: [{ label: 'Command center', to: '/' }] },
@@ -18,17 +22,40 @@ const navGroups = [
 
 export function Shell({ children }) {
   const location = useLocation();
+  const { user, setUser } = useAuth();
+  const [signOutError, setSignOutError] = useState('');
   const current = navGroups.flatMap((group) => group.items).find((item) => location.pathname === item.to);
+  const visibleGroups = navGroups.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => {
+      if (item.to === '/') return user?.role === 'ADMIN';
+      if (item.to.startsWith('/admin')) return user?.role === 'ADMIN';
+      if (item.to.startsWith('/teacher')) return user?.role === 'TEACHER';
+      if (item.to.startsWith('/student')) return user?.role === 'STUDENT';
+      return false;
+    })
+  })).filter((group) => group.items.length);
+  const signOut = async () => {
+    setSignOutError('');
+    try {
+      await api.logout();
+    } catch (error) {
+      setSignOutError(error.message);
+    } finally {
+      clearAccessToken();
+      setUser(null);
+    }
+  };
   return <div className="app-shell">
     <aside className="sidebar">
       <Link className="brand" to="/"><span className="brand-mark">CP</span><span>Classroom<br /><strong>Pulse</strong></span></Link>
-      <div className="sidebar-scroll">{navGroups.map((group) => <div className="nav-group" key={group.label}>
+      <div className="sidebar-scroll">{visibleGroups.map((group) => <div className="nav-group" key={group.label}>
         <p>{group.label}</p>{group.items.map((item) => <NavLink key={item.to} to={item.to} className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}><span className="nav-dot" />{item.label}</NavLink>)}
       </div>)}</div>
       <div className="sidebar-foot"><span className="status-dot online" /> API connected via environment</div>
     </aside>
     <main className="main-shell">
-      <header className="topbar"><div><p className="eyebrow">SMART CLASSROOM / OPERATIONS</p><h1>{current?.label || 'Command center'}</h1></div><div className="top-actions"><span className="role-chip">DEMO MODE</span><Link className="profile-chip" to="/login"><span>AD</span><b>Demo operator</b><small>Administrator</small></Link></div></header>
+      <header className="topbar"><div><p className="eyebrow">SMART CLASSROOM / OPERATIONS</p><h1>{current?.label || 'Classroom workspace'}</h1>{signOutError && <small role="alert">{signOutError} · signed out locally.</small>}</div><div className="top-actions"><span className="role-chip">{user?.role}</span><div className="profile-chip"><span>{user?.name?.slice(0, 2).toUpperCase()}</span><b>{user?.name}</b><small>{user?.email}</small></div><button className="button secondary" onClick={signOut}>Sign out</button></div></header>
       <div className="content"><Outlet /></div>
     </main>
   </div>;

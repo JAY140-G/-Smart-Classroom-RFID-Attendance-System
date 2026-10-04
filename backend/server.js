@@ -14,6 +14,7 @@ const attendanceRoutes = require('./routes/attendanceRoutes');
 const createEntityRouter = require('./routes/entityRoutes');
 const faceReferenceRoutes = require('./routes/faceReferenceRoutes');
 const faceVerificationRoutes = require('./routes/faceVerificationRoutes');
+const authRoutes = require('./routes/authRoutes');
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -22,6 +23,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+app.use('/api/auth', authRoutes);
 app.use('/api/timetable', timetableRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/students', createEntityRouter('students'));
