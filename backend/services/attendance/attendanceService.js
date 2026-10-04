@@ -5,6 +5,7 @@ const Student = require('../../models/Student');
 const AttendanceSession = require('../../models/AttendanceSession');
 const AttendanceRecord = require('../../models/AttendanceRecord');
 const AttendanceEvent = require('../../models/AttendanceEvent');
+const AttendanceScanReceipt = require('../../models/AttendanceScanReceipt');
 const AppError = require('../../utils/AppError');
 const { getActiveSession } = require('./sessionService');
 const { subjectSummary } = require('./attendanceAnalyticsService');
@@ -16,6 +17,29 @@ const TRANSITIONS = {
   IN_CLASS: { type: 'EXIT', nextState: 'OUTSIDE' },
   OUTSIDE: { type: 'ENTRY', nextState: 'IN_CLASS' }
 };
+
+function receiptResponse(receipt, { rfidUid, studentId, sessionId }) {
+  const matchesIdentity = receipt.rfidUid === rfidUid
+    && String(receipt.studentId) === String(studentId);
+  const matchesSession = String(receipt.sessionId) === String(sessionId);
+  if (!matchesIdentity || !matchesSession) {
+    throw new AppError('Idempotency-Key was already used for a different scan', 409);
+  }
+  return receipt.response;
+}
+
+async function replayReceipt(receipt, identity, student) {
+  let effectiveSessionId = identity.sessionId;
+  if (!effectiveSessionId) {
+    const activeSession = await getActiveSession({ classId: student.classId });
+    effectiveSessionId = activeSession?._id || receipt.sessionId;
+  }
+  return receiptResponse(receipt, { ...identity, sessionId: effectiveSessionId });
+}
+
+function documentSnapshot(document) {
+  return document && typeof document.toObject === 'function' ? document.toObject() : document;
+}
 
 async function findOrCreateRecord(student, session, transactionSession) {
   try {
@@ -42,11 +66,23 @@ async function findOrCreateRecord(student, session, transactionSession) {
   }
 }
 
-async function processScan({ rfidUid, faceVerified, imageBuffer, sessionId }) {
+async function processScan({ rfidUid, faceVerified, imageBuffer, sessionId, idempotencyKey }) {
   if (typeof rfidUid !== 'string' || !rfidUid.trim()) throw new AppError('rfidUid is required', 400);
+  if (typeof idempotencyKey !== 'string') throw new AppError('A valid UUID Idempotency-Key header is required', 400);
 
-  const student = await Student.findOne({ rfidUid: rfidUid.trim().toUpperCase(), isActive: true });
+  const normalizedRfidUid = rfidUid.trim().toUpperCase();
+  const normalizedIdempotencyKey = idempotencyKey.toLowerCase();
+  const student = await Student.findOne({ rfidUid: normalizedRfidUid, isActive: true });
   if (!student) throw new AppError('RFID not recognized', 404);
+
+  if (sessionId && !mongoose.isValidObjectId(sessionId)) throw new AppError('Invalid session id', 400);
+  const receiptIdentity = {
+    rfidUid: normalizedRfidUid,
+    studentId: student._id,
+    sessionId
+  };
+  const existingReceipt = await AttendanceScanReceipt.findOne({ idempotencyKey: normalizedIdempotencyKey });
+  if (existingReceipt) return replayReceipt(existingReceipt, receiptIdentity, student);
 
   const faceReference = await FaceReference.findOne({ studentId: student._id, isActive: true }).select('+referenceData');
   const verification = await verifyFace({ student, imageBuffer, referenceData: faceReference?.referenceData, faceVerified });
@@ -55,7 +91,6 @@ async function processScan({ rfidUid, faceVerified, imageBuffer, sessionId }) {
 
   let session;
   if (sessionId) {
-    if (!mongoose.isValidObjectId(sessionId)) throw new AppError('Invalid session id', 400);
     session = await AttendanceSession.findOne({ _id: sessionId, status: 'ACTIVE' });
   } else {
     session = await getActiveSession({ classId: student.classId });
@@ -67,11 +102,22 @@ async function processScan({ rfidUid, faceVerified, imageBuffer, sessionId }) {
     throw new AppError('Student does not belong to this session class', 403);
   }
 
-  let updatedRecord;
-  let event;
+  let scanResult;
+  let transactionError;
   const transactionSession = await mongoose.startSession();
   try {
     await transactionSession.withTransaction(async () => {
+      scanResult = undefined;
+      const receipt = await AttendanceScanReceipt.findOne({ idempotencyKey: normalizedIdempotencyKey })
+        .session(transactionSession);
+      if (receipt) {
+        scanResult = receiptResponse(receipt, {
+          ...receiptIdentity,
+          sessionId: session._id
+        });
+        return;
+      }
+
       const activeSession = await AttendanceSession.findOne({ _id: session._id, status: 'ACTIVE' })
         .session(transactionSession);
       if (!activeSession) throw new AppError('No active attendance session found', 404);
@@ -90,14 +136,14 @@ async function processScan({ rfidUid, faceVerified, imageBuffer, sessionId }) {
 
       const record = await findOrCreateRecord(student, activeSession, transactionSession);
       const transition = TRANSITIONS[record.currentState];
-      updatedRecord = await AttendanceRecord.findOneAndUpdate(
+      const updatedRecord = await AttendanceRecord.findOneAndUpdate(
         { _id: record._id, currentState: record.currentState, finalStatus: null },
         { $set: { currentState: transition.nextState } },
         { new: true, session: transactionSession }
       );
       if (!updatedRecord) throw new AppError('Attendance record changed; please retry the scan', 409);
 
-      [event] = await AttendanceEvent.create([{
+      const [event] = await AttendanceEvent.create([{
         studentId: student._id,
         sessionId: activeSession._id,
         type: transition.type,
@@ -106,14 +152,45 @@ async function processScan({ rfidUid, faceVerified, imageBuffer, sessionId }) {
         faceVerified: true,
         verificationStatus: 'VERIFIED'
       }], { session: transactionSession });
+
+      const attendance = await subjectSummary(student._id, sessionSubjectId, transactionSession);
+      const response = {
+        student: documentSnapshot(student),
+        session: documentSnapshot(session),
+        record: documentSnapshot(updatedRecord),
+        event: documentSnapshot(event),
+        attendance: {
+          student: documentSnapshot(attendance.student),
+          subject: documentSnapshot(attendance.subject),
+          presentCount: attendance.presentCount,
+          completedClassCount: attendance.completedClassCount,
+          attendancePercentage: attendance.attendancePercentage
+        }
+      };
+      await AttendanceScanReceipt.create([{
+        idempotencyKey: normalizedIdempotencyKey,
+        rfidUid: normalizedRfidUid,
+        studentId: student._id,
+        sessionId: activeSession._id,
+        response
+      }], { session: transactionSession });
+      scanResult = { student, session, record: updatedRecord, event, attendance };
     });
+  } catch (error) {
+    transactionError = error;
   } finally {
     await transactionSession.endSession();
   }
 
-  const attendance = await subjectSummary(student._id, sessionSubjectId);
+  if (transactionError) {
+    const winningReceipt = await AttendanceScanReceipt.findOne({ idempotencyKey: normalizedIdempotencyKey });
+    if (winningReceipt) {
+      return replayReceipt(winningReceipt, receiptIdentity, student);
+    }
+    throw transactionError;
+  }
 
-  return { student, session, record: updatedRecord, event, attendance };
+  return scanResult;
 }
 
 async function closeSession(sessionId) {

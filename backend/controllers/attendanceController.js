@@ -16,7 +16,11 @@ async function active(req, res) {
 }
 
 async function scan(req, res) {
-  const result = await processScan({ ...req.body, imageBuffer: req.file?.buffer });
+  const result = await processScan({
+    ...req.body,
+    imageBuffer: req.file?.buffer,
+    idempotencyKey: req.idempotencyKey
+  });
   res.status(200).json({
     success: true,
     message: `${result.event.type} recorded`,

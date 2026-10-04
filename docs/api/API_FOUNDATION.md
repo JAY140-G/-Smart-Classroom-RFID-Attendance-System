@@ -56,13 +56,21 @@ Supported list filters include `classId`, `subjectId`, `teacherId`, `dayOfWeek`,
 | `POST` | `/api/attendance/session/start` | Start a session for an active timetable entry | IMPLEMENTED |
 | `GET` | `/api/attendance/session/active` | Retrieve the active session, with optional class/teacher filters | IMPLEMENTED |
 | `POST` | `/api/attendance/session/:id/close` | Finalize all records and close a session | IMPLEMENTED |
-| `POST` | `/api/attendance/scan` | Process RFID plus supplied face-verification result | IMPLEMENTED |
+| `POST` | `/api/attendance/scan` | Process an RFID scan with face verification and an idempotency key | IMPLEMENTED |
 | `GET` | `/api/attendance/live/:sessionId` | Return live states, counts, and subject percentage | IMPLEMENTED |
 | `GET` | `/api/attendance/student/:studentId/subject/:subjectId` | Return one student's subject attendance | IMPLEMENTED |
 | `GET` | `/api/attendance/student/:studentId` | Return a student's attendance across subjects | IMPLEMENTED |
 | `GET` | `/api/attendance/register` | Return attendance records with filters | IMPLEMENTED |
 
 ## Scan Rules
+
+`POST /api/attendance/scan` requires a UUID `Idempotency-Key` HTTP header, an `rfidUid` field, and a multipart `image` for a new scan; `sessionId` is optional. The key identifies one physical card presentation. Firmware must reuse the same key when retrying that presentation and generate a new key for a later card presentation; the backend does not apply a per-student cooldown. A replay of an already-successful key can omit the image because the original request already passed face verification.
+
+After the active-student lookup, a previously successful matching key replays the originally stored response without re-running face verification, creating another attendance transition, or inserting another event. A receipt can only exist after the original request passed face verification and committed successfully. Replays do not depend on the session remaining active or the face engine being available. If the same key is used with a different normalized RFID/student identity or a different explicitly supplied session, the API returns `409 Conflict`. When `sessionId` is omitted on a retry, the receipt's original effective session is used for matching.
+
+Receipts are created only in the successful scan transaction. Missing/invalid keys are rejected with `400`; failed verification or other rejected scans do not create a successful receipt. A retry of a rejected attempt is evaluated again. Clients must use a new key if they change the image or start a new physical presentation. The backend binds keys to normalized RFID/student and effective session, but does not fingerprint image content; clients must not reuse a key with a changed image.
+
+Receipts store the original response snapshot, identity binding, and creation timestamp, but not the image or face embedding. The unique key index has no TTL: automatic expiry would weaken durable retry protection. Any future retention/cleanup policy must exceed the maximum supported retry window and be approved before implementation.
 
 The implemented scan workflow:
 
@@ -73,6 +81,7 @@ The implemented scan workflow:
 5. Create `ENTRY` when the state is `NOT_SCANNED` or `OUTSIDE`.
 6. Create `EXIT` when the state is `IN_CLASS`.
 7. Reject invalid RFID or failed face verification without changing state or creating an event.
+8. Commit the attendance record transition, event, and idempotency receipt together in a MongoDB transaction.
 
 ## Session Close Rules
 

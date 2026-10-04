@@ -15,14 +15,25 @@ function percentage(presentCount, completedClassCount) {
   return completedClassCount === 0 ? 0 : Math.round((presentCount / completedClassCount) * 10000) / 100;
 }
 
-async function subjectSummary(studentId, subjectId) {
+async function subjectSummary(studentId, subjectId, transactionSession) {
   assertId(studentId, 'student id');
   assertId(subjectId, 'subject id');
-  const [student, subject, records] = await Promise.all([
-    Student.findById(studentId),
-    Subject.findById(subjectId),
-    AttendanceRecord.find({ studentId, subjectId }).populate('sessionId')
-  ]);
+  let student;
+  let subject;
+  let records;
+  if (transactionSession) {
+    student = await Student.findById(studentId).session(transactionSession);
+    subject = await Subject.findById(subjectId).session(transactionSession);
+    records = await AttendanceRecord.find({ studentId, subjectId })
+      .populate({ path: 'sessionId', options: { session: transactionSession } })
+      .session(transactionSession);
+  } else {
+    [student, subject, records] = await Promise.all([
+      Student.findById(studentId),
+      Subject.findById(subjectId),
+      AttendanceRecord.find({ studentId, subjectId }).populate('sessionId')
+    ]);
+  }
   if (!student) throw new AppError('Student not found', 404);
   if (!subject) throw new AppError('Subject not found', 404);
 
