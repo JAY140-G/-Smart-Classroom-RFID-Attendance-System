@@ -77,10 +77,18 @@ Supported list filters include `classId`, `subjectId`, `teacherId`, `dayOfWeek`,
 | `POST` | `/api/attendance/session/:id/close` | Finalize all records and close a session | IMPLEMENTED |
 | `POST` | `/api/attendance/scan` | Process an RFID scan with device authentication, face verification, and an idempotency key | IMPLEMENTED |
 | `GET` | `/api/attendance/me` | Return the authenticated student's own attendance | IMPLEMENTED (STUDENT) |
+| `GET` | `/api/attendance/timetable/me` | Return the authenticated student's active class timetable | IMPLEMENTED (STUDENT) |
 | `GET` | `/api/attendance/live/:sessionId` | Return live states, counts, and subject percentage | IMPLEMENTED |
+| `GET` | `/api/attendance/sessions` | List sessions with date/status/class/subject filters; teacher results are scoped to assigned sessions | IMPLEMENTED |
 | `GET` | `/api/attendance/student/:studentId/subject/:subjectId` | Return one student's subject attendance | IMPLEMENTED |
 | `GET` | `/api/attendance/student/:studentId` | Return a student's attendance across subjects | IMPLEMENTED |
 | `GET` | `/api/attendance/register` | Return attendance records with filters | IMPLEMENTED |
+| `GET` | `/api/attendance/report` | Return completed records, totals, and subject comparison for report filters | IMPLEMENTED |
+| `GET` | `/api/attendance/activity` | Return recent attendance movements, scoped to the teacher where applicable | IMPLEMENTED |
+
+Attendance percentages are calculated from closed attendance records, not scan events or time in class. Only `PRESENT` contributes to the numerator; `ABSENT` and `LEFT_EARLY` remain in the denominator. Results are rounded to one decimal place. A response uses `null` when no completed sessions exist, distinct from a real `0%`. Active and incomplete sessions are excluded.
+
+`GET /api/attendance/report` accepts `date` (single day), `startDate`, `endDate`, `classId`, `subjectId`, and `status`. The selected status filters displayed records; summary totals and percentages are calculated across all statuses within the selected date/class/subject scope. The CSV export represents the currently displayed and searched rows.
 
 ## Scan Rules
 
@@ -136,6 +144,6 @@ The intended engine compares embedding distance, where lower distance is better.
 
 ## Frontend Integration
 
-The frontend uses `VITE_API_BASE_URL` and calls the implemented routes through one centralized API client. Live attendance polls `/api/attendance/live/:sessionId` every four seconds and stops polling after the backend close-session request succeeds. The frontend does not duplicate state transitions or attendance calculations.
+The frontend uses `VITE_API_BASE_URL` and calls the implemented routes through one centralized API client. Admin dashboard counts use the student, teacher, class, and subject APIs; attendance totals, active sessions, and movement history use the attendance APIs. Teacher pages use server-side teacher scoping. Student summary and timetable endpoints derive the student identity from the authenticated account and do not accept a client-supplied student ID. Live attendance polls `/api/attendance/live/:sessionId` every four seconds and stops polling after the backend close-session request succeeds. The frontend does not duplicate state transitions or attendance calculations.
 
-The current backend does not expose CRUD endpoints for students, teachers, subjects, or classes, so their Phase 4 pages present explicit unavailable states rather than fabricated data or writes.
+Reports export CSV with standard quote escaping and spreadsheet-formula prefix neutralization. Dashboard, report, timetable, and activity views consume backend responses and provide explicit loading, error, empty, and unavailable states rather than fabricated attendance metrics.

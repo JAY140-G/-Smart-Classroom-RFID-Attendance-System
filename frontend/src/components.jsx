@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import api from './services/api';
@@ -9,10 +9,11 @@ const navGroups = [
   { label: 'Admin', items: [
     { label: 'Setup center', to: '/admin/setup' }, { label: 'Students', to: '/admin/students' }, { label: 'Teachers', to: '/admin/teachers' },
     { label: 'Subjects', to: '/admin/subjects' }, { label: 'Classes', to: '/admin/classes' },
-    { label: 'Timetable', to: '/admin/timetable' }, { label: 'Face enrollment', to: '/admin/face-enrollment' }, { label: 'Verification test', to: '/admin/face-verification-test' }, { label: 'Reports', to: '/admin/reports' }
+  { label: 'Timetable', to: '/admin/timetable' }, { label: 'Start attendance', to: '/admin/start-attendance' }, { label: 'Live attendance', to: '/admin/live-attendance' },
+  { label: 'Face enrollment', to: '/admin/face-enrollment' }, { label: 'Verification test', to: '/admin/face-verification-test' }, { label: 'Reports', to: '/admin/reports' }
   ] },
   { label: 'Teaching', items: [
-    { label: 'Start attendance', to: '/teacher/start-attendance' }, { label: 'Live attendance', to: '/teacher/live-attendance' },
+    { label: 'Overview', to: '/teacher' }, { label: 'Start attendance', to: '/teacher/start-attendance' }, { label: 'Live attendance', to: '/teacher/live-attendance' },
     { label: 'Register', to: '/teacher/attendance-register' }, { label: 'Subject reports', to: '/teacher/subject-reports' }
   ] },
   { label: 'Student', items: [
@@ -23,8 +24,12 @@ const navGroups = [
 export function Shell({ children }) {
   const location = useLocation();
   const { user, setUser } = useAuth();
+  const homePath = user?.role === 'TEACHER' ? '/teacher' : user?.role === 'STUDENT' ? '/student/attendance' : '/';
   const [signOutError, setSignOutError] = useState('');
-  const current = navGroups.flatMap((group) => group.items).find((item) => location.pathname === item.to);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  useEffect(() => setSidebarOpen(false), [location.pathname]);
+  const current = navGroups.flatMap((group) => group.items).find((item) => location.pathname === item.to)
+    || (location.pathname === '/' ? { label: 'Command center' } : null);
   const visibleGroups = navGroups.map((group) => ({
     ...group,
     items: group.items.filter((item) => {
@@ -47,15 +52,16 @@ export function Shell({ children }) {
     }
   };
   return <div className="app-shell">
-    <aside className="sidebar">
-      <Link className="brand" to="/"><span className="brand-mark">CP</span><span>Classroom<br /><strong>Pulse</strong></span></Link>
+    {sidebarOpen && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} />}
+    <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`} id="primary-navigation">
+      <Link className="brand" to={homePath}><span className="brand-mark">CP</span><span>Classroom<br /><strong>Pulse</strong></span></Link>
       <div className="sidebar-scroll">{visibleGroups.map((group) => <div className="nav-group" key={group.label}>
         <p>{group.label}</p>{group.items.map((item) => <NavLink key={item.to} to={item.to} className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}><span className="nav-dot" />{item.label}</NavLink>)}
       </div>)}</div>
-      <div className="sidebar-foot"><span className="status-dot online" /> API connected via environment</div>
+      <div className="sidebar-foot"><span className="status-dot online" /> API integration configured</div>
     </aside>
     <main className="main-shell">
-      <header className="topbar"><div><p className="eyebrow">SMART CLASSROOM / OPERATIONS</p><h1>{current?.label || 'Classroom workspace'}</h1>{signOutError && <small role="alert">{signOutError} · signed out locally.</small>}</div><div className="top-actions"><span className="role-chip">{user?.role}</span><div className="profile-chip"><span>{user?.name?.slice(0, 2).toUpperCase()}</span><b>{user?.name}</b><small>{user?.email}</small></div><button className="button secondary" onClick={signOut}>Sign out</button></div></header>
+      <header className="topbar"><div className="topbar-title"><button className="mobile-menu" aria-label="Open navigation" aria-expanded={sidebarOpen} aria-controls="primary-navigation" onClick={() => setSidebarOpen(true)}>☰</button><div><p className="eyebrow">SMART CLASSROOM / OPERATIONS</p><h1>{current?.label || 'Classroom workspace'}</h1>{signOutError && <small role="alert">{signOutError} · signed out locally.</small>}</div></div><div className="top-actions"><span className="role-chip">{user?.role}</span><div className="profile-chip"><span>{user?.name?.slice(0, 2).toUpperCase()}</span><b>{user?.name}</b><small>{user?.email}</small></div><button className="button secondary" onClick={signOut}>Sign out</button></div></header>
       <div className="content"><Outlet /></div>
     </main>
   </div>;

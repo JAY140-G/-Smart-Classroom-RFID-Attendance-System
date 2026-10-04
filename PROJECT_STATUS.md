@@ -16,7 +16,7 @@
 - [x] Model relationships
 - [x] Indexes and constraints
 - [x] Database health check
-- Attendance services, setup CRUD APIs, face verification, and frontend surfaces were added in later phases. Authentication security hardening and hardware firmware remain incomplete.
+- Attendance services, setup CRUD APIs, face verification, authentication, and integrated dashboard/report surfaces were added in later phases. Deployment security hardening and hardware firmware remain incomplete.
 
 ### Phase 3 Attendance and Timetable Logic
 - [x] Timetable CRUD and conflict validation
@@ -27,7 +27,7 @@
 - [x] Session finalization to PRESENT, LEFT_EARLY, or ABSENT
 - [x] Subject-wise attendance calculation
 - [x] Live attendance and register endpoints
-- Face verification, frontend attendance, and initial role-based authentication were implemented in later phases. Authentication hardening, hardware communication, and notifications remain incomplete.
+- Face verification, frontend attendance, role-based authentication, and role-scoped dashboard/report pages were implemented in later phases. Authentication deployment hardening, hardware communication, and notifications remain incomplete.
 
 ### Planning
 - [x] Final project concept
@@ -44,10 +44,10 @@
 - [x] Timetable management page
 - [x] Start attendance page
 - [x] Live attendance polling and close attendance flow
-- [x] Attendance register and subject reports
+- [x] Attendance register and subject reports with date, class, subject, and status filters
 - [x] Student attendance and history views
 - [x] Loading, error, empty, and unavailable states
-- Login is credential-based, but deployment hardening is still required. Student, teacher, subject, and class setup workflows use the existing backend CRUD APIs.
+- Credential login, role-aware navigation, responsive mobile navigation, and logout are integrated; deployment hardening is still required. Student, teacher, subject, and class setup workflows use the existing backend CRUD APIs.
 
 ### Phase 5 Face Verification Foundation and Enrollment Architecture
 - [x] Enrollment-ready face reference model
@@ -82,16 +82,17 @@
 - [x] Actual WASM face verification integration
 - [ ] Face threshold calibration
 - [x] Authentication and role-based backend authorization foundation
-- [ ] Reports
+- [x] Filtered attendance reports, completed-record totals, subject comparison, and recent activity APIs
 
 ### Frontend
 - [x] React/Vite project
-- [x] Login development placeholder
-- [x] Admin dashboard foundation
-- [x] Teacher dashboard foundation
-- [x] Student dashboard foundation
-- [x] Attendance register
-- [x] Subject analytics
+- [x] Credential login and role-directed dashboards
+- [x] Admin command center with backend-backed directory counts, attendance totals, active sessions, activity, and quick actions
+- [x] Teacher dashboard with assigned timetable, sessions, live states, completed outcomes, reports, and scoped activity
+- [x] Student dashboard with own overall/subject rates, history, and timetable
+- [x] Filterable attendance register and reports with safe CSV export
+- [x] Responsive navigation, dashboard cards, attendance bars, and accessible loading/error/empty feedback
+- Attendance percentages are calculated server-side from completed records only, use PRESENT / completed records, exclude active sessions, and return `null` when no completed data exists. UI display uses one decimal place and distinguishes unavailable from `0.0%`.
 
 ### Hardware
 - [ ] ESP32
@@ -141,3 +142,12 @@
 - [x] Dashboard student, teacher, and active-subject counts load from existing APIs and show request failures honestly.
 - [x] Added mocked-fetch frontend API tests covering CRUD endpoint mapping and bearer-token forwarding.
 - Verification: frontend production build passed; frontend API tests passed (4/4); lint completed with existing warnings for unused imports/props and hook dependency/state-in-effect patterns. These checks do not validate a live backend, database, authentication, or hardware integration.
+
+### Dashboard and Reporting Improvements (2026-10-04)
+- [x] Added scoped admin, teacher, and student dashboards that use existing setup, timetable, session, report, activity, and authenticated student APIs.
+- [x] Added one-decimal backend percentages based on completed attendance records only; active/incomplete sessions are excluded and no-data is `null`, not `0`.
+- [x] Added date-range, class, subject, and final-status report filters, attendance totals, per-subject comparisons, student search, and CSV export with quote escaping and spreadsheet formula-prefix neutralization.
+- [x] Added student-only authenticated summary/timetable views and teacher-scoped session, report, register, and activity views.
+- [x] Added responsive dashboard styling and mobile sidebar controls; documented report routes and percentage/filter semantics in `docs/api/API_FOUNDATION.md`.
+- Verification: backend tests passed (25/25); frontend tests passed (7/7); frontend production build passed; syntax checks passed for all changed backend JavaScript files; `git diff --check` passed. These are database-free/unit/build checks, not live API, MongoDB, authentication deployment, browser visual, or hardware validation.
+- Remaining limitations: report/register and student history currently load matching records without pagination; CSV exports the currently loaded, searched rows. No live database, deployed-auth, browser/device, or physical hardware verification was performed. Face enrollment/verification status is available through existing setup/face screens; camera capture and hardware integration remain separate milestones.
