@@ -6,7 +6,59 @@ import { DataTable, EmptyState, ErrorState, LoadingState, Modal, PageIntro, Stat
 function useAsync(load, deps = []) { const [state, setState] = useState({ loading: true, error: '', data: null }); const reload = async () => { setState({ loading: true, error: '', data: null }); try { const result = await load(); setState({ loading: false, error: '', data: result?.data ?? result }); } catch (error) { setState({ loading: false, error: error.message, data: null }); } }; useEffect(() => { reload(); }, deps); return { ...state, reload }; }
 function formatDate(date) { return date ? new Date(date).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' }) : '--'; }
 
-export function CommandCenter() { const health = useAsync(api.health, []); const timetable = useAsync(() => api.timetables('?isActive=true'), []); const active = useAsync(api.activeSession, []); return <><PageIntro eyebrow="TODAY / OPERATIONS" title="The room at a glance"><span>One calm view of the attendance system. Live state comes from the backend; no frontend calculations alter attendance.</span></PageIntro><div className="stat-grid"><StatCard label="Total students" value="--" detail="Student API not exposed" /><StatCard label="Teachers" value="--" detail="Teacher API not exposed" tone="warm" /><StatCard label="Active subjects" value="--" detail="Subject API not exposed" /><StatCard label="Active session" value={active.loading ? '...' : active.data ? 'LIVE' : 'NONE'} detail={active.data?.subjectId?.name || 'No session currently open'} tone="green" /></div><div className="dashboard-grid"><section className="panel panel-large"><div className="panel-head"><div><p className="eyebrow">SCHEDULE</p><h3>Active timetable</h3></div><Link className="text-link" to="/admin/timetable">Manage timetable →</Link></div>{timetable.loading ? <LoadingState label="Loading timetable" /> : timetable.error ? <ErrorState error={timetable.error} onRetry={timetable.reload} /> : <DataTable columns={[{ key: 'dayOfWeek', label: 'Day' }, { key: 'startTime', label: 'Time' }, { key: 'subjectId', label: 'Subject', render: (r) => r.subjectId?.name || r.subjectId?.code || '--' }, { key: 'classId', label: 'Class', render: (r) => r.classId ? `${r.classId.name} / ${r.classId.section}` : '--' }, { key: 'room', label: 'Room' }]} rows={timetable.data || []} empty="No active timetable entries" />}</section><section className="panel signal-panel"><p className="eyebrow">SYSTEM SIGNAL</p><h3>Backend health</h3><div className={`signal ${health.data?.database === 'connected' ? 'good' : 'muted'}`}><span className="status-dot" />{health.loading ? 'Checking connection' : health.data?.database === 'connected' ? 'MongoDB connected' : 'Database unavailable'}</div><p className="muted">The dashboard uses the API configured in <code>VITE_API_BASE_URL</code>.</p><Link className="button primary" to="/teacher/start-attendance">Start a session</Link></section></div></>; }
+export function CommandCenter() {
+  const health = useAsync(api.health, []);
+  const timetable = useAsync(() => api.timetables('?isActive=true'), []);
+  const active = useAsync(api.activeSession, []);
+  const students = useAsync(() => api.students('?isActive=true'), []);
+  const teachers = useAsync(api.teachers, []);
+  const subjects = useAsync(() => api.subjects('?isActive=true'), []);
+  const countValue = (resource) => resource.loading ? '...' : resource.error ? '--' : resource.data?.length ?? 0;
+  const countDetail = (resource, noun) => resource.loading ? 'Loading from backend' : resource.error ? 'Could not load from backend' : `${noun} from backend`;
+  return <>
+    <PageIntro eyebrow="TODAY / OPERATIONS" title="The room at a glance"><span>One calm view of the attendance system. Live state comes from the backend; no frontend calculations alter attendance.</span></PageIntro>
+    <div className="stat-grid">
+      <StatCard label="Active students" value={countValue(students)} detail={countDetail(students, 'Registered active students')} />
+      <StatCard label="Teachers" value={countValue(teachers)} detail={countDetail(teachers, 'Registered teachers')} tone="warm" />
+      <StatCard label="Active subjects" value={countValue(subjects)} detail={countDetail(subjects, 'Available subjects')} />
+      <StatCard label="Active session" value={active.loading ? '...' : active.error ? 'ERROR' : active.data ? 'LIVE' : 'NONE'} detail={active.error || active.data?.subjectId?.name || 'No session currently open'} tone="green" />
+    </div>
+    <div className="dashboard-grid">
+      <section className="panel panel-large">
+        <div className="panel-head">
+          <div><p className="eyebrow">SCHEDULE</p><h3>Active timetable</h3></div>
+          <Link className="text-link" to="/admin/timetable">Manage timetable →</Link>
+        </div>
+        {timetable.loading
+          ? <LoadingState label="Loading timetable" />
+          : timetable.error
+            ? <ErrorState error={timetable.error} onRetry={timetable.reload} />
+            : <DataTable
+              columns={[
+                { key: 'dayOfWeek', label: 'Day' },
+                { key: 'startTime', label: 'Time' },
+                { key: 'subjectId', label: 'Subject', render: (row) => row.subjectId?.name || row.subjectId?.code || '--' },
+                { key: 'classId', label: 'Class', render: (row) => row.classId ? `${row.classId.name} / ${row.classId.section}` : '--' },
+                { key: 'room', label: 'Room' }
+              ]}
+              rows={timetable.data || []}
+              empty="No active timetable entries"
+            />}
+      </section>
+      <section className="panel signal-panel">
+        <p className="eyebrow">SYSTEM SIGNAL</p>
+        <h3>Backend health</h3>
+        <div className={`signal ${health.data?.database === 'connected' ? 'good' : 'muted'}`}>
+          <span className="status-dot" />
+          {health.loading ? 'Checking connection' : health.error ? 'Health check failed' : health.data?.database === 'connected' ? 'MongoDB connected' : 'Database unavailable'}
+        </div>
+        {health.error && <p className="muted" role="alert">{health.error}</p>}
+        <p className="muted">The dashboard uses the API configured in <code>VITE_API_BASE_URL</code>.</p>
+        <Link className="button primary" to="/teacher/start-attendance">Start a session</Link>
+      </section>
+    </div>
+  </>;
+}
 
 const unavailablePages = { '/admin/students': ['STUDENT DIRECTORY', 'Students'], '/admin/teachers': ['STAFF DIRECTORY', 'Teachers'], '/admin/subjects': ['ACADEMIC CATALOG', 'Subjects'], '/admin/classes': ['COHORTS', 'Classes'], '/admin/reports': ['ADMINISTRATION', 'Reports'] };
 export function UnavailablePage({ kind }) { const [eyebrow, title] = unavailablePages[kind] || ['WORKSPACE', 'Coming soon']; return <><PageIntro eyebrow={eyebrow} title={title}>The page is intentionally connected to the current backend contract.</PageIntro><Unavailable title={`${title} API not available`} /></>; }

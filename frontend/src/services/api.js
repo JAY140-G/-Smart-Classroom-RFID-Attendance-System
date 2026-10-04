@@ -1,4 +1,4 @@
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
+const API_BASE_URL = (import.meta.env?.VITE_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
 
 async function request(path, options = {}) {
   let response;
@@ -32,24 +32,30 @@ const api = {
   liveAttendance: (id) => request(`/api/attendance/live/${id}`),
   register: (query = '') => request(`/api/attendance/register${query}`),
   studentAttendance: (id) => request(`/api/attendance/student/${id}`),
-  subjectAttendance: (studentId, subjectId) => request(`/api/attendance/student/${studentId}/subject/${subjectId}`)
-  ,students: (query = '') => request(`/api/students${query}`)
-  ,student: (id) => request(`/api/students/${id}`)
-  ,createStudent: (data) => request('/api/students', { method: 'POST', body: JSON.stringify(data) })
-  ,updateStudent: (id, data) => request(`/api/students/${id}`, { method: 'PUT', body: JSON.stringify(data) })
-  ,deleteStudent: (id) => request(`/api/students/${id}`, { method: 'DELETE' })
-  ,teachers: (query = '') => request(`/api/teachers${query}`)
-  ,createTeacher: (data) => request('/api/teachers', { method: 'POST', body: JSON.stringify(data) })
-  ,subjects: (query = '') => request(`/api/subjects${query}`)
-  ,createSubject: (data) => request('/api/subjects', { method: 'POST', body: JSON.stringify(data) })
-  ,classes: (query = '') => request(`/api/classes${query}`)
-  ,createClass: (data) => request('/api/classes', { method: 'POST', body: JSON.stringify(data) })
-  ,faceStatus: () => request('/api/face-references/status')
-  ,faceReferences: () => request('/api/face-references')
-  ,enrollFace: (data) => request('/api/face-references', { method: 'POST', body: JSON.stringify(data) })
-  ,faceProviderStatus: () => request('/api/face-verification/status')
-  ,verifyFaceImage: (studentId, file) => { const body = new FormData(); body.append('studentId', studentId); body.append('image', file); return request('/api/face-verification/verify', { method: 'POST', headers: {}, body }); }
-  ,enrollFaceImage: (studentId, file) => { const body = new FormData(); body.append('studentId', studentId); body.append('image', file); return request('/api/face-verification/enroll', { method: 'POST', headers: {}, body }); }
+  subjectAttendance: (studentId, subjectId) => request(`/api/attendance/student/${studentId}/subject/${subjectId}`),
+  students: (query = '') => request(`/api/students${query}`),
+  student: (id) => request(`/api/students/${id}`),
+  createStudent: (data) => request('/api/students', { method: 'POST', body: JSON.stringify(data) }),
+  updateStudent: (id, data) => request(`/api/students/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteStudent: (id) => request(`/api/students/${id}`, { method: 'DELETE' }),
+  teachers: (query = '') => request(`/api/teachers${query}`),
+  createTeacher: (data) => request('/api/teachers', { method: 'POST', body: JSON.stringify(data) }),
+  updateTeacher: (id, data) => request(`/api/teachers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteTeacher: (id) => request(`/api/teachers/${id}`, { method: 'DELETE' }),
+  subjects: (query = '') => request(`/api/subjects${query}`),
+  createSubject: (data) => request('/api/subjects', { method: 'POST', body: JSON.stringify(data) }),
+  updateSubject: (id, data) => request(`/api/subjects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteSubject: (id) => request(`/api/subjects/${id}`, { method: 'DELETE' }),
+  classes: (query = '') => request(`/api/classes${query}`),
+  createClass: (data) => request('/api/classes', { method: 'POST', body: JSON.stringify(data) }),
+  updateClass: (id, data) => request(`/api/classes/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteClass: (id) => request(`/api/classes/${id}`, { method: 'DELETE' }),
+  faceStatus: () => request('/api/face-references/status'),
+  faceReferences: () => request('/api/face-references'),
+  enrollFace: (data) => request('/api/face-references', { method: 'POST', body: JSON.stringify(data) }),
+  faceProviderStatus: () => request('/api/face-verification/status'),
+  verifyFaceImage: (studentId, file) => { const body = new FormData(); body.append('studentId', studentId); body.append('image', file); return request('/api/face-verification/verify', { method: 'POST', headers: {}, body }); },
+  enrollFaceImage: (studentId, file) => { const body = new FormData(); body.append('studentId', studentId); body.append('image', file); return request('/api/face-verification/enroll', { method: 'POST', headers: {}, body }); }
 };
 
 export { API_BASE_URL };
