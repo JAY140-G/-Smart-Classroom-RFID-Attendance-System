@@ -117,3 +117,9 @@
 - [ ] Testing documentation
 - [ ] Final report
 - [ ] Final PPT
+
+### Current Reliability Progress (2026-10-04)
+- [x] Added a database-free Node.js test suite for attendance scan validation, face-verification gating, state transitions, receipt replay/conflicts, transactional write paths, and duplicate-key race handling.
+- [x] Added `npm test` for the backend.
+- Tests use mocked Mongoose operations. They do not prove MongoDB transaction behavior against Atlas and do not create attendance records.
+- Backend transaction integration testing, production authentication/authorization, calibrated face threshold, physical RFID debounce, firmware, and hardware validation remain incomplete.
