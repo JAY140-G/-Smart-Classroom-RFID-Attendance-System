@@ -29,12 +29,19 @@ function receiptResponse(receipt, { rfidUid, studentId, sessionId }) {
 }
 
 async function replayReceipt(receipt, identity, student) {
-  let effectiveSessionId = identity.sessionId;
-  if (!effectiveSessionId) {
-    const activeSession = await getActiveSession({ classId: student.classId });
-    effectiveSessionId = activeSession?._id || receipt.sessionId;
+  if (!identity.sessionId) {
+    const activeSessions = await AttendanceSession.find({
+      classId: student.classId,
+      status: 'ACTIVE'
+    }).select('_id');
+    const hasDifferentActiveSession = activeSessions.some(
+      (activeSession) => String(activeSession._id) !== String(receipt.sessionId)
+    );
+    if (hasDifferentActiveSession) {
+      throw new AppError('Idempotency-Key was already used for a different scan', 409);
+    }
   }
-  return receiptResponse(receipt, { ...identity, sessionId: effectiveSessionId });
+  return receiptResponse(receipt, { ...identity, sessionId: identity.sessionId || receipt.sessionId });
 }
 
 function documentSnapshot(document) {

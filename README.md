@@ -16,10 +16,10 @@ The planned system includes:
 - **Attendance Session:** represent one actual class attendance session for a timetable slot.
 - **Attendance Events:** store verified `ENTRY` and `EXIT` movements without duration fields.
 - **Attendance Records:** store the student's live state and finalized session result.
-- **MongoDB:** planned persistence layer for users, students, teachers, subjects, classes, timetables, sessions, events, records, and face references.
-- **React Dashboard:** Phase 4 frontend for live attendance registers, timetable management, dashboards, and subject-wise analytics.
+- **MongoDB:** Mongoose persistence for users, students, teachers, subjects, classes, timetables, sessions, events, records, face references, auth sessions, and scan receipts.
+- **React Dashboard:** role-aware Admin, Teacher, and Student dashboards, setup workflows, reports, attendance registers, timetable management, and subject-wise analytics.
 
-Phase 5 adds the enrollment-ready foundation: setup CRUD for classes, subjects, teachers, and students; a Setup Center; safe face-reference status endpoints; and a face-verification service boundary. The current face provider is intentionally disabled until a real verification engine is connected.
+Phase 5 added setup CRUD for classes, subjects, teachers, and students; a Setup Center; and face enrollment/status workflows. Phase 6 connected a local WASM face-verification engine. Acceptance remains fail-closed until a calibrated threshold is configured.
 
 Phase 6 adds a real local WASM face engine using `@vladmandic/face-api` and TensorFlow.js WASM. It loads face detection, landmarks, and recognition weights, generates 128-dimensional descriptors, and computes Euclidean distance for 1:1 comparison against only the RFID-identified student's reference. Threshold calibration is intentionally pending, so verification returns `THRESHOLD_NOT_CONFIGURED` until a calibrated value is supplied.
 
@@ -66,16 +66,15 @@ attendancePercentage =
 
 The percentage is derived from attendance records rather than stored as a permanent hardcoded value. The current timetable subject determines the subject percentage shown in the live attendance view.
 
-## Frontend Dashboard
+## Frontend Dashboard and Authentication
 
-The React/Vite dashboard lives in `frontend/` and uses `VITE_API_BASE_URL` for all backend calls. Implemented views include:
+The React/Vite frontend lives in `frontend/` and uses `VITE_API_BASE_URL` for backend calls. Login uses authenticated server sessions and routes users according to their backend role. Backend authorization protects setup, timetable, attendance, and student-specific endpoints; frontend route guards are supplementary and are not the security boundary.
 
-- Admin command center and timetable management.
-- Teacher session start, live attendance with four-second polling, close attendance, register, and subject reports.
-- Student attendance, history, and a profile placeholder.
-- Development-only role selection on the login page. Production authentication is not implemented.
-
-Student, teacher, subject, and class management pages use the Phase 5 CRUD APIs.
+- Admin command center, setup CRUD, timetable management, session controls, live attendance, and reports.
+- Teacher dashboard, assigned timetable/session controls, live attendance, register, and subject reports.
+- Student dashboard, own attendance summary/history, and own class timetable.
+- Attendance reports include date/class/subject/status filters and a safely escaped CSV export.
+- Dashboard attendance percentages come from backend completed records. `PRESENT` contributes to the numerator, `ABSENT` and `LEFT_EARLY` remain in the denominator, active sessions are excluded, and no completed data is represented as unavailable rather than `0%`.
 
 ## Enrollment and Face Verification Foundation
 
@@ -87,7 +86,7 @@ Setup Center -> Classes -> Subjects -> Teachers -> Students -> RFID -> Face -> T
 
 RFID remains the primary identifier. Face verification is always scoped to the RFID-identified student and is never a 1:N search. The backend exposes `/api/face-references/status` and `/api/face-references`, but does not create a face reference while no provider is configured. Raw biometric data is not returned by normal reads.
 
-For development-only testing, set `FACE_VERIFICATION_MODE=development` in the local ignored `backend/.env`. This accepts an explicit test boolean at the backend boundary and labels the result as development-only; it performs no biometric comparison and must not be treated as production verification. The example configuration defaults to `disabled`.
+For isolated development testing, `FACE_VERIFICATION_MODE=development` accepts an explicit test boolean at the backend boundary; it performs no biometric comparison and must never be treated as production verification. Production attendance scans use the WASM verification path and fail closed unless a threshold has been configured.
 
 The Phase 6 endpoints are:
 
@@ -101,6 +100,8 @@ Phase 5 adds `/api/students`, `/api/teachers`, `/api/subjects`, and `/api/classe
 
 ## Current Phase
 
-Phases 1 through 5 and the Phase 6 WASM engine integration are implemented. Threshold calibration, authentication, hardware communication, notifications, and deployment remain future work.
+The backend attendance workflow, transactional scan/session-close writes, scan idempotency, authentication and role authorization, setup CRUD, timetable validation, face-verification APIs, and role-aware dashboards/reports are implemented. Automated backend and frontend tests are database-free; they do not establish live MongoDB transaction behavior or deployment readiness.
+
+Remaining milestones include representative face-threshold calibration, paginated reporting for larger datasets, deployment hardening, firmware and hardware integration, live Atlas/API validation, and an end-to-end attendance test with provisioned test identities and face references. RC522 hardware/cards and firmware are not available/implemented; physical attendance scans have not been validated.
 
 See [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md), [docs/database/DATABASE_DESIGN.md](docs/database/DATABASE_DESIGN.md), and [docs/api/API_FOUNDATION.md](docs/api/API_FOUNDATION.md) for the documented design.

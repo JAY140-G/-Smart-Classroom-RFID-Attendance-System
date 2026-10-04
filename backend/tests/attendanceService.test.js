@@ -57,6 +57,7 @@ beforeEach(() => {
     faceReference: { referenceData: [0.1] },
     faceVerification: { configured: true, verified: true },
     activeSessionForReplay: null,
+    activeSessionsForReplay: [],
     faceCalls: 0,
     recordWrites: [],
     eventWrites: [],
@@ -93,6 +94,7 @@ beforeEach(() => {
     receiptFindOne: AttendanceScanReceipt.findOne,
     receiptCreate: AttendanceScanReceipt.create,
     attendanceSessionFindOne: AttendanceSession.findOne,
+    attendanceSessionFind: AttendanceSession.find,
     attendanceSessionUpdateOne: AttendanceSession.updateOne,
     recordFindOneAndUpdate: AttendanceRecord.findOneAndUpdate,
     eventCreate: AttendanceEvent.create
@@ -126,6 +128,9 @@ beforeEach(() => {
     return documents;
   };
   AttendanceSession.findOne = (filter) => query(filter.status === 'ACTIVE' ? state.session : null);
+  AttendanceSession.find = (filter) => query(
+    filter.status === 'ACTIVE' ? state.activeSessionsForReplay : []
+  );
   AttendanceSession.updateOne = async (filter, update, options) => {
     state.sessionWrites.push({ filter, update, options, inTransaction: state.inTransaction });
     return { matchedCount: 1 };
@@ -148,6 +153,7 @@ afterEach(() => {
   AttendanceScanReceipt.findOne = originals.receiptFindOne;
   AttendanceScanReceipt.create = originals.receiptCreate;
   AttendanceSession.findOne = originals.attendanceSessionFindOne;
+  AttendanceSession.find = originals.attendanceSessionFind;
   AttendanceSession.updateOne = originals.attendanceSessionUpdateOne;
   AttendanceRecord.findOneAndUpdate = originals.recordFindOneAndUpdate;
   AttendanceEvent.create = originals.eventCreate;
@@ -262,7 +268,7 @@ test('rejects reusing a receipt key for another explicit session', async () => {
 
 test('rejects an omitted-session replay when a different session is now active', async () => {
   state.existingReceipt = createReceipt({ idempotencyKey: scanInput.idempotencyKey });
-  state.activeSessionForReplay = { _id: OTHER_SESSION_ID };
+  state.activeSessionsForReplay = [{ _id: OTHER_SESSION_ID }];
 
   await assert.rejects(
     processScan({ ...scanInput, sessionId: undefined }),
@@ -272,10 +278,36 @@ test('rejects an omitted-session replay when a different session is now active',
   assert.equal(state.eventWrites.length, 0);
 });
 
+test('rejects an omitted-session replay if any different session is active alongside the original', async () => {
+  state.existingReceipt = createReceipt({ idempotencyKey: scanInput.idempotencyKey });
+  state.activeSessionsForReplay = [{ _id: SESSION_ID }, { _id: OTHER_SESSION_ID }];
+
+  await assert.rejects(
+    processScan({ ...scanInput, sessionId: undefined }),
+    (error) => error.statusCode === 409
+  );
+  assert.equal(state.faceCalls, 0);
+  assert.equal(state.transactionCalls, 0);
+  assert.equal(state.eventWrites.length, 0);
+});
+
+test('replays an omitted-session receipt when its original session is the only active session', async () => {
+  const response = { student: { _id: STUDENT_ID }, session: { _id: SESSION_ID }, record: { currentState: 'IN_CLASS' }, event: { type: 'ENTRY' }, attendance: { attendancePercentage: 50 } };
+  state.existingReceipt = createReceipt({ idempotencyKey: scanInput.idempotencyKey, response });
+  state.activeSessionsForReplay = [{ _id: SESSION_ID }];
+
+  const result = await processScan({ ...scanInput, sessionId: undefined });
+
+  assert.deepEqual(result, response);
+  assert.equal(state.faceCalls, 0);
+  assert.equal(state.transactionCalls, 0);
+  assert.equal(state.eventWrites.length, 0);
+});
+
 test('replays an omitted-session receipt if no session is active', async () => {
   const response = { student: { _id: STUDENT_ID }, session: { _id: SESSION_ID }, record: { currentState: 'IN_CLASS' }, event: { type: 'ENTRY' }, attendance: { attendancePercentage: 50 } };
   state.existingReceipt = createReceipt({ idempotencyKey: scanInput.idempotencyKey, response });
-  state.activeSessionForReplay = null;
+  state.activeSessionsForReplay = [];
 
   const result = await processScan({ ...scanInput, sessionId: undefined });
 

@@ -12,7 +12,7 @@
 
 ### Phase 2 Database Foundation
 - [x] MongoDB/Mongoose configuration
-- [x] Ten database models
+- [x] Thirteen Mongoose models, including authentication and scan-receipt persistence
 - [x] Model relationships
 - [x] Indexes and constraints
 - [x] Database health check
@@ -35,7 +35,7 @@
 - [x] Hardware architecture
 - [x] Database design documentation
 - [x] API design documentation
-- [ ] Face verification technology selection
+- [x] Face verification technology selection (local WASM engine)
 
 ### Phase 4 Frontend Dashboard and API Integration
 - [x] React/Vite frontend foundation
@@ -57,7 +57,7 @@
 - [x] Setup Center and student enrollment workflows
 - [x] Human-readable timetable setup workflow
 - [x] Face provider status and safe reference endpoints
-- Actual camera capture, face model/provider, biometric enrollment, liveness, and physical ESP32-CAM integration remain future work.
+- Server-side image processing and face enrollment/verification APIs are implemented. Physical ESP32-CAM capture/transfer, liveness checks, and production threshold calibration remain future work.
 
 ### Phase 6 Actual Face Verification Engine
 - [x] Real WASM face engine installed and model weights available
@@ -68,7 +68,7 @@
 - [x] Real enrollment embedding generation
 - [x] Real 1:1 embedding comparison
 - [ ] Threshold calibration with representative single-face samples
-- Production acceptance remains blocked until a calibrated `FACE_MATCH_THRESHOLD` is configured.
+- Attendance production acceptance remains blocked until a calibrated `FACE_MATCH_THRESHOLD` is configured.
 
 ### Backend
 - [x] Node.js project
@@ -106,8 +106,8 @@
 ### Integration
 - [ ] ESP32 → Backend
 - [ ] ESP32-CAM → Backend
-- [ ] Backend → MongoDB
-- [ ] Backend → React
+- [ ] Backend → MongoDB live deployment validation
+- [x] Backend → React API integration (live deployment validation pending)
 - [ ] Full attendance test
 
 ### Documentation
@@ -151,3 +151,13 @@
 - [x] Added responsive dashboard styling and mobile sidebar controls; documented report routes and percentage/filter semantics in `docs/api/API_FOUNDATION.md`.
 - Verification: backend tests passed (25/25); frontend tests passed (7/7); frontend production build passed; syntax checks passed for all changed backend JavaScript files; `git diff --check` passed. These are database-free/unit/build checks, not live API, MongoDB, authentication deployment, browser visual, or hardware validation.
 - Remaining limitations: report/register and student history currently load matching records without pagination; CSV exports the currently loaded, searched rows. No live database, deployed-auth, browser/device, or physical hardware verification was performed. Face enrollment/verification status is available through existing setup/face screens; camera capture and hardware integration remain separate milestones.
+
+### Workflow Review and End-to-End Test Preparation (2026-10-04)
+- [x] Reviewed login, role guards, setup CRUD, timetable validation, session start/close, live movement state, completed attendance reports, scan receipts, and face-verification gating against the current source.
+- [x] Fixed an idempotent replay edge case: when a request omits `sessionId`, the service now checks all active sessions for the student's class and rejects key reuse with `409` if any active session differs from the receipt's original session. Replays still make no transition/event writes.
+- [x] Added a database-free regression test for simultaneous active sessions during an omitted-session receipt replay.
+- Verification after review: backend tests passed (27/27); frontend tests passed (7/7); frontend production build passed; syntax checks passed for changed backend JavaScript; `git diff --check` passed. These checks do not establish live Atlas transaction behavior, live HTTP/browser behavior, or hardware operation.
+- End-to-end prerequisites: configured Atlas replica set/transaction support, `MONGODB_URI`, one-time `AUTH_BOOTSTRAP_KEY` (minimum 32 characters), and `AUTH_DEVICE_KEY` (minimum 32 characters); deployed model indexes, including unique user email, unique student/session attendance record, and unique scan idempotency key; local WASM face engine and an explicitly calibrated `FACE_MATCH_THRESHOLD`; test class/subject/teacher/student, RFID UID, timetable entry for the current weekday, and enrolled face reference.
+- Shortest safe full workflow: bootstrap a test admin once; sign in and create a class, subject, teacher account, student account/RFID, and today's timetable slot; enroll a test face using the admin face-enrollment workflow; sign in as the assigned teacher and start the session; submit an authenticated device scan with a UUID `Idempotency-Key` and test image (retry with the same key, use a new key for EXIT); confirm live state/event response, close the session, then verify final status and report percentage. Use synthetic/test identities and approved test images; never use real student data for this run.
+- Not executed: bootstrap, any real database/API operation, browser flow, actual biometric verification, or hardware test. With no database configured, the automated suites can still run via `npm test` inside `backend/` and `frontend/`.
+- Current next milestone: run the prepared full workflow against a disposable test dataset on the confirmed Atlas replica set after confirming model indexes and configuring secrets out of band; then validate firmware/hardware separately when RC522 and firmware are available.
