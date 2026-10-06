@@ -85,6 +85,9 @@ Supported list filters include `classId`, `subjectId`, `teacherId`, `dayOfWeek`,
 | `GET` | `/api/attendance/register` | Return attendance records with filters | IMPLEMENTED |
 | `GET` | `/api/attendance/report` | Return completed records, totals, and subject comparison for report filters | IMPLEMENTED |
 | `GET` | `/api/attendance/activity` | Return recent attendance movements, scoped to the teacher where applicable | IMPLEMENTED |
+| `POST` | `/api/camera-test/image` | Receive a raw JPEG for ESP32-CAM connectivity testing; no attendance or database writes | IMPLEMENTED |
+
+`POST /api/camera-test/image` accepts raw JPEG bytes with `Content-Type: image/jpeg` and requires the dedicated `X-Camera-Test-Key` header backed by `CAMERA_TEST_KEY` (at least 32 characters). The endpoint is memory-only, capped at 5 MB, and validates JPEG start/end markers. It does not run face verification, access MongoDB, or create attendance data. Use a temporary key distinct from `AUTH_DEVICE_KEY`; see [the hardware upload test guide](../hardware/ESP32_CAM_BACKEND_TEST.md).
 
 Attendance percentages are calculated from closed attendance records, not scan events or time in class. Only `PRESENT` contributes to the numerator; `ABSENT` and `LEFT_EARLY` remain in the denominator. Results are rounded to one decimal place. A response uses `null` when no completed sessions exist, distinct from a real `0%`. Active and incomplete sessions are excluded.
 

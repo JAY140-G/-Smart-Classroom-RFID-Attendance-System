@@ -105,3 +105,5 @@ The backend attendance workflow, transactional scan/session-close writes, scan i
 Remaining milestones include representative face-threshold calibration, paginated reporting for larger datasets, deployment hardening, firmware and hardware integration, live Atlas/API validation, and an end-to-end attendance test with provisioned test identities and face references. RC522 hardware/cards and firmware are not available/implemented; physical attendance scans have not been validated.
 
 See [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md), [docs/database/DATABASE_DESIGN.md](docs/database/DATABASE_DESIGN.md), and [docs/api/API_FOUNDATION.md](docs/api/API_FOUNDATION.md) for the documented design.
+
+For the first local ESP32-CAM JPEG-to-backend connectivity check, follow [the hardware upload test guide](docs/hardware/ESP32_CAM_BACKEND_TEST.md). This is a camera transport test only; it does not perform face recognition or attendance processing.
