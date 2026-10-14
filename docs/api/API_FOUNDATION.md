@@ -41,6 +41,8 @@ All future attendance operations must use RFID as the primary identifier and req
 
 The initial administrator is created once through `POST /api/auth/bootstrap`. Configure `AUTH_BOOTSTRAP_KEY` out of band as a randomly generated secret of at least 32 characters, then send it in `X-Bootstrap-Key`. The request body contains `name`, `email`, and a password of 12–256 characters. Bootstrap and administrator creation commit in one MongoDB transaction; subsequent bootstrap requests are rejected. Do not publish the bootstrap key or send it from the browser.
 
+For local development recovery only, `POST /api/auth/admin/password-reset` accepts `{ "email": "...", "password": "..." }` and the same `X-Bootstrap-Key` header. It only resets an existing ADMIN account, commits the scrypt password update and revocation of that administrator's sessions in one transaction, and is unavailable when `NODE_ENV=production`. This is an out-of-band development/admin operation, not a public forgot-password workflow; never expose the key to a browser or client.
+
 `POST /api/auth/login` accepts `{ "email": "...", "password": "..." }` and returns a random bearer token. Passwords are stored as salted scrypt hashes; bearer tokens are stored only as SHA-256 digests and expire after eight hours. Use `Authorization: Bearer <token>` for authenticated APIs. `GET /api/auth/me` validates a token and returns the signed-in identity; `POST /api/auth/logout` revokes that session. The frontend keeps the token in tab-scoped session storage.
 
 New teacher and student accounts created by an administrator require an email address and an initial password of at least 12 characters. Administrators can update an account email or reset its password from the corresponding setup edit form; leaving the reset field blank keeps the current password. Existing accounts created before password authentication used a placeholder password and must be re-provisioned by an administrator before they can sign in. Self-service recovery, MFA, and login rate limiting are not implemented.
@@ -52,7 +54,7 @@ New teacher and student accounts created by an administrator require an email ad
 | STUDENT | Own attendance summary only |
 | RFID device | `POST /api/attendance/scan` requires `X-Attendance-Device-Key` configured as a separate random secret of at least 32 characters |
 
-Attendance scans remain a device API rather than a logged-in role API. The backend fails closed if `AUTH_DEVICE_KEY` is not configured. Firmware is not yet implemented and must keep the device key secret and use HTTPS. The current single shared device key does not provide per-device revocation.
+Attendance scans remain a device API rather than a logged-in role API. The backend fails closed if `AUTH_DEVICE_KEY` is not configured. Both boards use this same key; keep it private and use the devices only on a trusted local network. The current single shared device key does not provide per-device revocation.
 
 `AuthSession` creates a unique token-hash index and an `expiresAt` TTL index. Ensure these indexes are deployed in MongoDB; authorization checks expiry in each request even if TTL cleanup runs later.
 
@@ -76,6 +78,16 @@ Supported list filters include `classId`, `subjectId`, `teacherId`, `dayOfWeek`,
 | `GET` | `/api/attendance/session/active` | Retrieve the active session, with optional class/teacher filters | IMPLEMENTED |
 | `POST` | `/api/attendance/session/:id/close` | Finalize all records and close a session | IMPLEMENTED |
 | `POST` | `/api/attendance/scan` | Process an RFID scan with device authentication, face verification, and an idempotency key | IMPLEMENTED |
+| `POST` | `/api/attendance/live-scans` | Create an expiring RFID scan request for the ESP32-CAM | IMPLEMENTED |
+| `GET` | `/api/attendance/live-scans/next` | Return the oldest unexpired camera request without its RFID UID | IMPLEMENTED |
+| `POST` | `/api/attendance/live-scans/:scanId/image` | Submit one fresh JPEG; server-side verification gates the existing attendance state machine | IMPLEMENTED |
+| `GET` | `/api/attendance/live-scans/:scanId` | Read the bounded scan status/result for the RFID DevKit | IMPLEMENTED |
+| `GET` | `/api/attendance/live-scan-records` | Return the 20 newest physical and virtual scan summaries, including whether an image is retained (admin-authenticated) | IMPLEMENTED |
+| `GET` | `/api/attendance/live-scans/:scanId/image` | Return the actual retained JPEG without caching or attendance side effects (admin-authenticated) | IMPLEMENTED |
+| `GET` | `/api/attendance/virtual-scans/students` | List active students with separately assigned virtual UIDs and face-enrollment status (admin-authenticated) | IMPLEMENTED |
+| `POST` | `/api/attendance/virtual-scans` | Create an idempotent virtual-card challenge that still requires a fresh ESP32-CAM image and real face verification (admin-authenticated) | IMPLEMENTED |
+| `GET` | `/api/attendance/virtual-scans/:scanId` | Read virtual challenge status (admin-authenticated) | IMPLEMENTED |
+| `GET` | `/api/attendance/virtual-scans/recent` | Return the 20 newest virtual challenges and their actual outcomes (admin-authenticated) | IMPLEMENTED |
 | `GET` | `/api/attendance/me` | Return the authenticated student's own attendance | IMPLEMENTED (STUDENT) |
 | `GET` | `/api/attendance/timetable/me` | Return the authenticated student's active class timetable | IMPLEMENTED (STUDENT) |
 | `GET` | `/api/attendance/live/:sessionId` | Return live states, counts, and subject percentage | IMPLEMENTED |
@@ -113,6 +125,31 @@ The implemented scan workflow:
 6. Create `EXIT` when the state is `IN_CLASS`.
 7. Reject invalid RFID or failed face verification without changing state or creating an event.
 8. Commit the attendance record transition, event, and idempotency receipt together in a MongoDB transaction.
+
+### Live RFID + ESP32-CAM protocol
+
+Both boards poll/connect to the backend over the same trusted 2.4 GHz LAN and use `X-Attendance-Device-Key`. The RFID DevKit creates a request with a UUID `Idempotency-Key` and `{ "rfidUid": "...", "sessionId": "..." }` (the session is optional). The backend resolves the active student and active face reference before creating a challenge; the creation response gives the resolved name to the DevKit for its OLED, but the camera queue and status/result response contain no student name or RFID UID. The backend stores an opaque UUID `scanId` with a 30-second camera-capture deadline. The ESP32-CAM polls `/live-scans/next`; it receives only that `scanId` and deadline. It captures after receiving the request and posts raw `image/jpeg` bytes to `/live-scans/:scanId/image`. A database compare-and-set allows only one upload to start verification. The backend passes the UID and image to the existing `processScan()` path, which resolves the active student, loads that student's active `FaceReference`, calls the real `verifyFace()`, and only after a verified match runs the existing transactional state machine. No client-supplied verification flag is accepted.
+
+The terminal result is available from `/live-scans/:scanId` for up to ten minutes. It contains only the status, movement type/state on success, or a safe failure reason; it never contains a face image, embedding, or student record. The upload response uses `success: true` only for `SUCCEEDED`; verification rejections return `success: false` with an explicit terminal `FAILED` status. Failed verification, absent reference, invalid/no-face/multiple-face images, unknown UID/session, service errors, and expired camera requests cannot create attendance events. The challenge and result are TTL-cleaned from MongoDB. Captured JPEGs are stored separately for ten minutes by default; `LIVE_SCAN_IMAGE_RETENTION_MINUTES` can set a value from 1 to 60. The admin-only image endpoint enforces `expiresAt` even if MongoDB's TTL deletion is delayed. Scan request bodies, image bodies, and device keys must not be logged.
+
+Administrators can use `/api/attendance/live-scan-records` to identify a recent scan with a retained image, then request `/api/attendance/live-scans/:scanId/image`. The second route requires an administrator session and streams only `image/jpeg` with `Cache-Control: private, no-store` and `X-Content-Type-Options: nosniff`. Previewing an image is read-only and never calls attendance processing. Missing and expired images return 404.
+
+### Admin Virtual RFID console
+
+`GET /api/attendance/virtual-scans/students` lazily assigns each active student a stable `virtualRfidUid` of `V-` followed by that student's uppercase MongoDB ObjectId. The value is stored in the separate sparse-unique `Student.virtualRfidUid` field; the physical `rfidUid` is never changed. Face enrollment status is a boolean derived from active `FaceReference` rows, with no reference data returned. `POST /api/attendance/virtual-scans` requires an admin session and UUID `Idempotency-Key`; it accepts `virtualRfidUid` and an optional active-session `sessionId`. It creates a source-labelled `VIRTUAL` challenge for the existing ESP32-CAM queue. Missing active face enrollment is rejected before queuing. It still requires the configured attendance device key, the real camera image, `verifyFace()`, and the shared transactional `processScan()` state machine. A virtual UID is only a simulated card input; it does not simulate face verification. Source and virtual UID are stored on the scan, attendance event, and idempotency receipt, and the dashboard activity feed labels the event `VIRTUAL`.
+
+The hardware status response is versioned with `protocolVersion: 1`; device clients can map `WAITING_CAMERA` to “Connecting/Capturing”, `PROCESSING` to “Verifying Face”, `SUCCEEDED` to the returned movement/current state, and `FAILED`/`EXPIRED` to a retry/error screen. These are backend states, not predicted UI timers. The attendance record is finalized as `PRESENT`, `LEFT_EARLY`, or `ABSENT` only when the existing session is closed.
+
+Request details:
+
+- `POST /api/attendance/live-scans`: JSON, `rfidUid` is the uppercase/lowercase hexadecimal 4-, 7-, or 10-byte RC522 UID; optional `sessionId` is an active-session ObjectId. Requires device key and UUID `Idempotency-Key`; returns `202` with `scanId`, status, the resolved student name for the DevKit display, and expiry. An unknown student or missing active face reference is rejected before a challenge is created.
+- `GET /api/attendance/live-scans/next`: device key required; returns `{ "data": null }` when no camera capture is pending, otherwise only `scanId` and `expiresAt`.
+- `POST /api/attendance/live-scans/:scanId/image`: device key plus `Content-Type: image/jpeg`; raw JPEG body, maximum `FACE_MAX_IMAGE_BYTES` (5 MB by default). First unexpired upload claims the request; later uploads cannot re-run verification or attendance.
+- `GET /api/attendance/live-scans/:scanId`: device key required; returns `WAITING_CAMERA`, `PROCESSING`, `SUCCEEDED`, `FAILED`, or `EXPIRED`. Polling a terminal result does not repeat attendance work.
+- `GET /api/attendance/live-scan-records`: administrator session required; returns at most 20 scan summaries and a boolean indicating whether the corresponding capture is still retained.
+- `GET /api/attendance/live-scans/:scanId/image`: administrator session required; returns only the JPEG for that exact scan ID while its retention deadline is valid. This route has no attendance side effects.
+
+The concrete wiring, firmware setup, and runnable LAN/API checks are in [the live RFID + camera hardware guide](../hardware/LIVE_RFID_FACE_SCAN.md).
 
 ## Session Close Rules
 

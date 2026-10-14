@@ -70,7 +70,14 @@ app.use((error, req, res, next) => {
   }
 
   const statusCode = error.statusCode || 500;
-  const message = statusCode >= 500 ? 'Internal server error' : error.message;
+  if (statusCode >= 500) {
+    const route = req.route?.path;
+    console.error(`API request failed (${req.method} ${route || '<unmatched route>'}): ${error.name} status=${statusCode}`);
+    if (typeof error.stack === 'string') {
+      console.error(error.stack.split('\n').slice(1).join('\n'));
+    }
+  }
+  const message = statusCode >= 500 && error.expose !== true ? 'Internal server error' : error.message;
   return res.status(statusCode).json({ success: false, message });
 });
 

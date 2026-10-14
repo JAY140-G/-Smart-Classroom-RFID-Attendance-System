@@ -1,6 +1,7 @@
 'use strict';
 
 const authService = require('../services/authService');
+const AppError = require('../utils/AppError');
 
 async function login(req, res) {
   const data = await authService.login(req.body);
@@ -12,6 +13,14 @@ async function bootstrap(req, res) {
   res.status(201).json({ success: true, message: 'Initial admin created', data });
 }
 
+async function resetAdminPassword(req, res) {
+  if (process.env.NODE_ENV === 'production') {
+    throw new AppError('Admin password reset is unavailable in production', 404);
+  }
+  const data = await authService.resetAdminPassword({ ...req.body, bootstrapKey: req.get('X-Bootstrap-Key') });
+  res.status(200).json({ success: true, message: 'Admin password reset', data });
+}
+
 async function current(req, res) {
   res.status(200).json({ success: true, data: { user: authService.publicUser(req.auth.user), expiresAt: req.auth.session.expiresAt } });
 }
@@ -21,4 +30,4 @@ async function logout(req, res) {
   res.status(200).json({ success: true, message: 'Logged out' });
 }
 
-module.exports = { login, bootstrap, current, logout };
+module.exports = { login, bootstrap, resetAdminPassword, current, logout };

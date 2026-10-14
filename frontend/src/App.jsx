@@ -5,6 +5,7 @@ import { Login } from './authPages';
 import { EntityPage, FaceEnrollmentPage, FaceVerificationTest, SetupCenter, StudentsPage, TimetableSetupPage } from './phase5Pages';
 import { AuthProvider, ProtectedLayout, RequireRole } from './AuthContext';
 import { AdminDashboard, AttendanceReports, StudentDashboard, StudentProfile, TeacherDashboard } from './dashboardPages';
+import { VirtualRfidConsole } from './VirtualRfidConsole';
 
 export default function App() {
   return <AuthProvider><Routes>
@@ -19,6 +20,7 @@ export default function App() {
       <Route path="/admin/classes" element={<RequireRole roles={['ADMIN']}><EntityPage type="classes" title="Classes" eyebrow="ADMIN / COHORTS" /></RequireRole>} />
       <Route path="/admin/start-attendance" element={<RequireRole roles={['ADMIN']}><StartAttendance /></RequireRole>} />
       <Route path="/admin/live-attendance" element={<RequireRole roles={['ADMIN']}><LiveAttendance /></RequireRole>} />
+      <Route path="/admin/virtual-rfid" element={<RequireRole roles={['ADMIN']}><VirtualRfidConsole /></RequireRole>} />
       <Route path="/admin/face-enrollment" element={<RequireRole roles={['ADMIN']}><FaceEnrollmentPage /></RequireRole>} />
       <Route path="/admin/face-verification-test" element={<RequireRole roles={['ADMIN']}><FaceVerificationTest /></RequireRole>} />
       <Route path="/admin/reports" element={<RequireRole roles={['ADMIN']}><AttendanceReports /></RequireRole>} />

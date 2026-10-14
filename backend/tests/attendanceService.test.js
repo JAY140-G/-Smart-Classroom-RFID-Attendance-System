@@ -36,19 +36,35 @@ function query(value) {
   };
 }
 
-function createReceipt({ idempotencyKey, rfidUid = 'CARD-A', studentId = STUDENT_ID, sessionId = SESSION_ID, response }) {
+function createReceipt({
+  idempotencyKey,
+  rfidUid = 'CARD-A',
+  studentId = STUDENT_ID,
+  sessionId = SESSION_ID,
+  source = 'RFID',
+  virtualRfidUid,
+  response
+}) {
   return {
     idempotencyKey,
     rfidUid,
     studentId,
     sessionId,
+    source,
+    virtualRfidUid,
     response: response || { student: { _id: studentId }, session: { _id: sessionId }, record: { currentState: 'IN_CLASS' }, event: { type: 'ENTRY' }, attendance: { attendancePercentage: 0 } }
   };
 }
 
 beforeEach(() => {
   state = {
-    student: { _id: STUDENT_ID, rfidUid: 'CARD-A', classId: '64b000000000000000000004', isActive: true },
+    student: {
+      _id: STUDENT_ID,
+      rfidUid: 'CARD-A',
+      virtualRfidUid: `V-${STUDENT_ID.toUpperCase()}`,
+      classId: '64b000000000000000000004',
+      isActive: true
+    },
     session: { _id: SESSION_ID, classId: '64b000000000000000000004', subjectId: '64b000000000000000000005', date: new Date('2026-10-04T00:00:00.000Z') },
     record: { _id: '64b000000000000000000006', studentId: STUDENT_ID, sessionId: SESSION_ID, currentState: 'NOT_SCANNED', finalStatus: null },
     updatedRecord: { _id: '64b000000000000000000006', studentId: STUDENT_ID, sessionId: SESSION_ID, currentState: 'IN_CLASS', finalStatus: null },
@@ -120,7 +136,16 @@ beforeEach(() => {
   };
   mongoose.startSession = async () => state.transactionSession;
 
-  Student.findOne = (filter) => query(filter.isActive === true && state.student?.isActive ? state.student : null);
+  Student.findOne = (filter) => query(
+    filter.isActive === true
+      && state.student?.isActive
+      && (filter.rfidUid
+        ? state.student.rfidUid === filter.rfidUid
+        : String(state.student._id) === String(filter._id)
+          && state.student.virtualRfidUid === filter.virtualRfidUid)
+      ? state.student
+      : null
+  );
   FaceReference.findOne = () => query(state.faceReference);
   AttendanceScanReceipt.findOne = () => query(state.receiptLookups.length ? state.receiptLookups.shift() : state.existingReceipt);
   AttendanceScanReceipt.create = async (documents, options) => {
@@ -191,6 +216,53 @@ test('does not start a transaction or write attendance when face verification fa
   assert.equal(state.eventWrites.length, 0);
 });
 
+test('preserves the real face-mismatch reason for safe scan-status reporting', async () => {
+  state.faceVerification = { configured: true, verified: false, reason: 'FACE_MISMATCH' };
+
+  await assert.rejects(
+    processScan(scanInput),
+    (error) => error.statusCode === 403 && error.reason === 'FACE_MISMATCH'
+  );
+  assert.equal(state.transactionCalls, 0);
+  assert.equal(state.eventWrites.length, 0);
+});
+
+test('a client faceVerified flag cannot bypass server-side face verification', async () => {
+  state.faceVerification = { configured: true, verified: false };
+  await assert.rejects(
+    processScan({ ...scanInput, faceVerified: true }),
+    (error) => error.statusCode === 403
+  );
+  assert.equal(state.faceCalls, 1);
+  assert.equal(state.transactionCalls, 0);
+  assert.equal(state.eventWrites.length, 0);
+});
+
+test('a missing face reference cannot reach the attendance transaction', async () => {
+  state.faceReference = null;
+  state.verifyFace = async ({ referenceData }) => {
+    state.faceCalls += 1;
+    return { configured: true, verified: Array.isArray(referenceData) };
+  };
+
+  await assert.rejects(processScan(scanInput), (error) => error.statusCode === 403);
+  assert.equal(state.faceCalls, 1);
+  assert.equal(state.transactionCalls, 0);
+  assert.equal(state.eventWrites.length, 0);
+});
+
+test('a face service exception cannot reach the attendance transaction', async () => {
+  state.verifyFace = async () => {
+    state.faceCalls += 1;
+    throw new Error('face service failure');
+  };
+
+  await assert.rejects(processScan(scanInput), /face service failure/);
+  assert.equal(state.faceCalls, 1);
+  assert.equal(state.transactionCalls, 0);
+  assert.equal(state.eventWrites.length, 0);
+});
+
 test('commits transition, event, summary snapshot, and receipt in one transaction', async () => {
   const result = await processScan(scanInput);
   const receipt = state.receiptWrites[0].document;
@@ -213,6 +285,44 @@ test('commits transition, event, summary snapshot, and receipt in one transactio
     event: result.event,
     attendance: result.attendance
   });
+});
+
+test('virtual scan uses the same real face gate and transactional attendance transition with an audit source', async () => {
+  const virtualRfidUid = `V-${STUDENT_ID.toUpperCase()}`;
+  const result = await processScan({
+    source: 'VIRTUAL',
+    studentId: STUDENT_ID,
+    virtualRfidUid,
+    imageBuffer: scanInput.imageBuffer,
+    sessionId: SESSION_ID,
+    idempotencyKey: scanInput.idempotencyKey
+  });
+
+  assert.equal(state.faceCalls, 1);
+  assert.equal(state.transactionCommitted, true);
+  assert.equal(result.record.currentState, 'IN_CLASS');
+  assert.equal(state.eventWrites[0].event.source, 'VIRTUAL');
+  assert.equal(state.eventWrites[0].event.virtualRfidUid, virtualRfidUid);
+  assert.equal(state.receiptWrites[0].document.source, 'VIRTUAL');
+  assert.equal(state.receiptWrites[0].document.virtualRfidUid, virtualRfidUid);
+});
+
+test('virtual face mismatch cannot write attendance', async () => {
+  state.faceVerification = { configured: true, verified: false, reason: 'FACE_MISMATCH' };
+
+  await assert.rejects(
+    processScan({
+      source: 'VIRTUAL',
+      studentId: STUDENT_ID,
+      virtualRfidUid: `V-${STUDENT_ID.toUpperCase()}`,
+      imageBuffer: scanInput.imageBuffer,
+      sessionId: SESSION_ID,
+      idempotencyKey: scanInput.idempotencyKey
+    }),
+    (error) => error.statusCode === 403
+  );
+  assert.equal(state.transactionCalls, 0);
+  assert.equal(state.eventWrites.length, 0);
 });
 
 test('preserves the EXIT and re-entry transition rules', async (t) => {

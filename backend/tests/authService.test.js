@@ -146,4 +146,6 @@ test('attendance device access fails closed when no device key is configured', (
   authentication.requireDeviceKey({ get: () => 'not-a-configured-key' }, {}, (error) => errors.push(error));
 
   assert.equal(errors[0].statusCode, 503);
+  assert.equal(errors[0].expose, true);
+  assert.equal(errors[0].message, 'Attendance device authentication is not configured');
 });

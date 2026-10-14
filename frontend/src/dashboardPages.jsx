@@ -35,6 +35,7 @@ function ActivityTable({ resource }) {
     columns={[
       { key: 'student', label: 'Student', render: (row) => <><strong>{row.student?.name || 'Student'}</strong><small className="table-subtext">{row.student?.rollNumber || ''}</small></> },
       { key: 'movement', label: 'Movement', render: (row) => <StatusBadge value={row.type} /> },
+      { key: 'source', label: 'Scan source', render: (row) => <StatusBadge value={row.source || 'RFID'} /> },
       { key: 'context', label: 'Class · subject', render: (row) => `${row.className || '—'} · ${row.subjectName || '—'}` },
       { key: 'timestamp', label: 'Time', render: (row) => row.timestamp ? new Date(row.timestamp).toLocaleString() : '—' }
     ]}

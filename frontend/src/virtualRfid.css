@@ -1,0 +1,154 @@
+.virtual-console {
+  display: grid;
+  gap: 18px;
+}
+
+.virtual-warning {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #e6be71;
+  border-radius: 12px;
+  background: #fff8e8;
+  padding: 14px 18px;
+  color: #624711;
+}
+
+.virtual-warning span,
+.virtual-student-summary span,
+.virtual-status-head > div > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.virtual-scan-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.virtual-student-picker {
+  display: grid;
+  max-width: 540px;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.virtual-student-picker select {
+  min-height: 42px;
+  border: 1px solid #dce5eb;
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px 10px;
+}
+
+.virtual-student-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 28px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.virtual-student-summary > div,
+.virtual-status-head > div {
+  display: grid;
+  gap: 5px;
+}
+
+.virtual-scan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.virtual-scan-actions a {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.virtual-status {
+  display: grid;
+  gap: 8px;
+  border-left: 3px solid var(--aqua);
+  border-radius: 4px 10px 10px 4px;
+  background: #f2f8f8;
+  padding: 14px 16px;
+}
+
+.virtual-status-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.virtual-status-head strong {
+  font-size: 17px;
+}
+
+.virtual-status p,
+.virtual-status small {
+  margin: 0;
+  color: var(--muted);
+}
+
+.virtual-error {
+  margin: 0;
+  color: #a43a2a;
+}
+
+.virtual-history-panel .panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.virtual-history-panel .table-subtext {
+  display: block;
+}
+
+.scan-image-overlay {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  background: rgb(16 30 39 / 72%);
+  padding: 20px;
+}
+
+.scan-image-preview {
+  display: grid;
+  width: min(820px, 100%);
+  max-height: 90vh;
+  gap: 14px;
+  overflow: auto;
+  border-radius: 14px;
+  background: #fff;
+  padding: 18px;
+}
+
+.scan-image-preview img {
+  display: block;
+  max-width: 100%;
+  max-height: 68vh;
+  justify-self: center;
+  object-fit: contain;
+}
+
+.scan-image-preview small {
+  color: var(--muted);
+}
+
+@media (max-width: 720px) {
+  .virtual-student-summary {
+    display: grid;
+  }
+}

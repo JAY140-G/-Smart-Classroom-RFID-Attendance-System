@@ -8,6 +8,11 @@ build/
 
 .vscode/
 
+# Local-only firmware credentials and Wi-Fi settings.
+firmware/esp32-devkit/rfid_live_scan/live_scan_config.h
+firmware/esp32-cam/live_scan/live_scan_config.h
+firmware/esp32-cam/camera_upload_test/camera_test_config.h
+
 __pycache__/
 *.pyc
 

@@ -28,6 +28,28 @@ async function request(path, options = {}) {
   return payload;
 }
 
+async function requestBlob(path) {
+  const token = getAccessToken();
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+  } catch {
+    throw new Error('Backend unavailable. Start the backend server and try again.');
+  }
+
+  if (response.status === 401 && token) {
+    clearAccessToken();
+    window.dispatchEvent(new Event('auth:expired'));
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.message || `Request failed with status ${response.status}`);
+  }
+  return response.blob();
+}
+
 const api = {
   health: () => request('/api/health/db'),
   login: async (credentials) => {
@@ -51,6 +73,19 @@ const api = {
   register: (query = '') => request(`/api/attendance/register${query}`),
   attendanceReport: (query = '') => request(`/api/attendance/report${query}`),
   attendanceActivity: () => request('/api/attendance/activity'),
+  virtualScanStudents: () => request('/api/attendance/virtual-scans/students'),
+  createVirtualScan: (virtualRfidUid, idempotencyKey, sessionId) => request('/api/attendance/virtual-scans', {
+    method: 'POST',
+    headers: { 'Idempotency-Key': idempotencyKey },
+    body: JSON.stringify({
+      virtualRfidUid,
+      ...(sessionId ? { sessionId } : {})
+    })
+  }),
+  virtualScanStatus: (scanId) => request(`/api/attendance/virtual-scans/${scanId}`),
+  recentVirtualScans: () => request('/api/attendance/virtual-scans/recent'),
+  recentLiveScans: () => request('/api/attendance/live-scan-records'),
+  liveScanImage: (scanId) => requestBlob(`/api/attendance/live-scans/${encodeURIComponent(scanId)}/image`),
   myTimetable: () => request('/api/attendance/timetable/me'),
   studentAttendance: (id) => request(`/api/attendance/student/${id}`),
   subjectAttendance: (studentId, subjectId) => request(`/api/attendance/student/${studentId}/subject/${subjectId}`),
@@ -76,7 +111,8 @@ const api = {
   enrollFace: (data) => request('/api/face-references', { method: 'POST', body: JSON.stringify(data) }),
   faceProviderStatus: () => request('/api/face-verification/status'),
   verifyFaceImage: (studentId, file) => { const body = new FormData(); body.append('studentId', studentId); body.append('image', file); return request('/api/face-verification/verify', { method: 'POST', headers: {}, body }); },
-  enrollFaceImage: (studentId, file) => { const body = new FormData(); body.append('studentId', studentId); body.append('image', file); return request('/api/face-verification/enroll', { method: 'POST', headers: {}, body }); }
+  enrollFaceImage: (studentId, file) => { const body = new FormData(); body.append('studentId', studentId); body.append('image', file); return request('/api/face-verification/enroll', { method: 'POST', headers: {}, body }); },
+  deactivateFaceReference: (id) => request(`/api/face-references/${id}`, { method: 'DELETE' })
 };
 
 export { API_BASE_URL };

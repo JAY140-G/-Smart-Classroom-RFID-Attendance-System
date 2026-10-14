@@ -61,6 +61,18 @@ function tokenDigest(token) {
   return createHash('sha256').update(token).digest('hex');
 }
 
+function verifyBootstrapKey(bootstrapKey, operation = 'Admin bootstrap') {
+  const configuredKey = process.env.AUTH_BOOTSTRAP_KEY;
+  if (typeof configuredKey !== 'string' || configuredKey.length < 32) {
+    throw new AppError(`${operation} is not configured`, 503);
+  }
+  if (typeof bootstrapKey !== 'string') throw new AppError('Invalid bootstrap key', 403);
+
+  const suppliedDigest = createHash('sha256').update(bootstrapKey).digest();
+  const configuredDigest = createHash('sha256').update(configuredKey).digest();
+  if (!timingSafeEqual(suppliedDigest, configuredDigest)) throw new AppError('Invalid bootstrap key', 403);
+}
+
 async function createSession(user) {
   const token = randomBytes(32).toString('base64url');
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
@@ -96,14 +108,7 @@ async function login({ email, password } = {}) {
 
 async function bootstrapAdmin({ name, email, password, bootstrapKey }) {
   validateCredentials({ name, email, password }, { requireName: true });
-  const configuredKey = process.env.AUTH_BOOTSTRAP_KEY;
-  if (typeof configuredKey !== 'string' || configuredKey.length < 32) {
-    throw new AppError('Admin bootstrap is not configured', 503);
-  }
-  if (typeof bootstrapKey !== 'string') throw new AppError('Invalid bootstrap key', 403);
-  const suppliedDigest = createHash('sha256').update(bootstrapKey).digest();
-  const configuredDigest = createHash('sha256').update(configuredKey).digest();
-  if (!timingSafeEqual(suppliedDigest, configuredDigest)) throw new AppError('Invalid bootstrap key', 403);
+  verifyBootstrapKey(bootstrapKey);
 
   const hashedPassword = await hashPassword(password);
   const session = await mongoose.startSession();
@@ -132,6 +137,28 @@ async function bootstrapAdmin({ name, email, password, bootstrapKey }) {
   return createSession(user);
 }
 
+async function resetAdminPassword({ email, password, bootstrapKey } = {}) {
+  validateCredentials({ email, password });
+  verifyBootstrapKey(bootstrapKey, 'Admin password reset');
+
+  const hashedPassword = await hashPassword(password);
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const admin = await User.findOne({ email: normalizeEmail(email), role: 'ADMIN' }).session(session);
+      if (!admin) throw new AppError('Admin account not found', 404);
+
+      admin.password = hashedPassword;
+      await admin.save({ session });
+      await AuthSession.deleteMany({ userId: admin._id }, { session });
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  return { email: normalizeEmail(email) };
+}
+
 async function authenticateToken(token) {
   const authSession = await AuthSession.findOne({
     tokenHash: tokenDigest(token),
@@ -152,6 +179,7 @@ module.exports = {
   publicUser,
   login,
   bootstrapAdmin,
+  resetAdminPassword,
   authenticateToken,
   logout
 };

@@ -30,6 +30,17 @@ const attendanceEventSchema = new mongoose.Schema({
     trim: true,
     uppercase: true
   },
+  source: {
+    type: String,
+    enum: ['RFID', 'VIRTUAL'],
+    default: 'RFID',
+    required: true
+  },
+  virtualRfidUid: {
+    type: String,
+    trim: true,
+    uppercase: true
+  },
   faceVerified: {
     type: Boolean,
     required: true

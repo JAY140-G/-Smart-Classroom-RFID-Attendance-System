@@ -169,7 +169,7 @@ function StudentForm({ classes, initial, onClose, onSaved }) {
       <FormField label="Student name"><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></FormField>
       <FormField label="Roll number"><input required value={form.rollNumber} onChange={(event) => setForm({ ...form, rollNumber: event.target.value })} /></FormField>
       <FormField label="Class"><select required value={form.classId} onChange={(event) => setForm({ ...form, classId: event.target.value })}><option value="">Select class</option>{classes.map((item) => <option key={item._id} value={item._id}>{item.name} / {item.section}</option>)}</select></FormField>
-      <FormField label="RFID UID · manual development registration"><input required value={form.rfidUid} onChange={(event) => setForm({ ...form, rfidUid: event.target.value })} placeholder="Enter UID from future ESP32 scan" /></FormField>
+      <FormField label="Physical RFID UID (hex)"><input required value={form.rfidUid} onChange={(event) => setForm({ ...form, rfidUid: event.target.value })} placeholder="8, 14, or 20 hex characters" /></FormField>
       <FormField label="Account email"><input type="email" autoComplete="username" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></FormField>
       <FormField label={initial ? 'Reset password (leave blank to keep current)' : 'Initial password (minimum 12 characters)'}><input type="password" autoComplete="new-password" minLength={form.password ? 12 : undefined} required={!initial} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></FormField>
       <div className="enrollment-note"><strong>Face: {initial ? 'enrollment managed separately' : 'Not enrolled'}</strong><span>Face data is managed through the face enrollment page and is not changed here.</span></div>
@@ -225,7 +225,7 @@ export function StudentsPage() {
       { key: 'name', label: 'Student', render: (row) => <b>{row.name}</b> },
       { key: 'rollNumber', label: 'Roll number' },
       { key: 'classId', label: 'Class', render: (row) => row.classId ? `${row.classId.name} / ${row.classId.section}` : '--' },
-      { key: 'rfidUid', label: 'RFID', render: (row) => row.rfidUid ? <StatusBadge value="REGISTERED" /> : <StatusBadge value="NOT_SCANNED" /> },
+      { key: 'rfidUid', label: 'Physical RFID UID', render: (row) => row.rfidUid ? <code>{row.rfidUid}</code> : <StatusBadge value="NOT_SCANNED" /> },
       { key: 'face', label: 'Face' },
       { key: 'status', label: 'Status' },
       { key: 'actions', label: 'Actions' }
@@ -238,7 +238,90 @@ function TimetableSetupForm({ classes, subjects, teachers, initial, onClose, onS
 
 export function TimetableSetupPage() { const data = useResource(() => api.timetables('?isActive=true'), []); const classes = useResource(api.classes, []); const subjects = useResource(api.subjects, []); const teachers = useResource(api.teachers, []); const [editing, setEditing] = useState(null); const deactivate = async (id) => { if (!window.confirm('Deactivate this timetable entry?')) return; try { await api.deactivateTimetable(id); data.reload(); } catch (e) { window.alert(e.message); } }; const missing = !classes.data.length || !subjects.data.length || !teachers.data.length; return <><PageIntro eyebrow="ADMIN / SCHEDULE" title="Timetable" action={<button className="button primary" disabled={missing} onClick={() => setEditing({})}>+ Add timetable</button>}><span>Choose human-readable class, subject, and teacher names. The backend remains authoritative for conflict validation.</span></PageIntro>{missing && <div className="notice">{!classes.data.length ? 'Create a class' : !subjects.data.length ? 'Create a subject' : 'Add a teacher'} before creating a timetable.</div>}{data.loading ? <LoadingState label="Loading timetable" /> : data.error ? <ErrorState error={data.error} onRetry={data.reload} /> : <DataTable columns={[{ key: 'dayOfWeek', label: 'Day' }, { key: 'startTime', label: 'Start' }, { key: 'endTime', label: 'End' }, { key: 'subjectId', label: 'Subject', render: (r) => r.subjectId?.name || '--' }, { key: 'classId', label: 'Class', render: (r) => r.classId ? `${r.classId.name} / ${r.classId.section}` : '--' }, { key: 'teacherId', label: 'Teacher', render: (r) => r.teacherId?.name || '--' }, { key: 'room', label: 'Room' }, { key: 'actions', label: '', render: (r) => <div className="row-actions"><button className="table-action" onClick={() => setEditing(r)}>Edit</button><button className="table-action danger" onClick={() => deactivate(r._id)}>Deactivate</button></div> }]} rows={data.data} empty="No active timetable entries" />}{editing && <TimetableSetupForm initial={editing._id ? editing : null} classes={classes.data} subjects={subjects.data} teachers={teachers.data} onClose={() => setEditing(null)} onSaved={data.reload} />}</>; }
 
-export function FaceEnrollmentPage() { const students = useResource(api.students, []); const provider = useResource(api.faceProviderStatus, []); const [studentId, setStudentId] = useState(''); const [file, setFile] = useState(null); const [message, setMessage] = useState(''); const [saving, setSaving] = useState(false); const enroll = async (event) => { event.preventDefault(); if (!studentId || !file) return; setSaving(true); setMessage(''); try { await api.enrollFaceImage(studentId, file); setMessage('Face enrollment confirmed by the backend.'); } catch (error) { setMessage(error.message); } finally { setSaving(false); } }; return <><PageIntro eyebrow="ADMIN / FACE ENROLLMENT" title="Face enrollment"><span>Development Face Enrollment. The image is sent to the backend provider boundary; this page never claims success without a successful backend response.</span></PageIntro><div className="panel enrollment-panel"><form className="form-grid" onSubmit={enroll}><FormField label="Student"><select required value={studentId} onChange={(e) => setStudentId(e.target.value)}><option value="">Select student</option>{students.data.map((student) => <option key={student._id} value={student._id}>{student.name} / {student.rollNumber}</option>)}</select></FormField><FormField label="Enrollment image"><input required type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setFile(e.target.files?.[0] || null)} /></FormField><div className="enrollment-note"><strong>Provider: {provider.loading ? 'Checking...' : provider.data?.configured ? provider.data.engine : 'Camera service not connected'}</strong><span>Face data is processed in memory and no raw image is stored by this foundation.</span></div>{message && <div className="form-error">{message}</div>}<div className="form-actions"><button className="button primary" disabled={saving || !students.data.length}>{saving ? 'Sending...' : 'Capture / enroll'}</button></div></form></div></>; }
+export function FaceEnrollmentPage() {
+  const students = useResource(api.students, []);
+  const faces = useResource(api.faceReferences, []);
+  const provider = useResource(api.faceProviderStatus, []);
+  const [studentId, setStudentId] = useState('');
+  const [file, setFile] = useState(null);
+  const [message, setMessage] = useState('');
+  const [saving, setSaving] = useState(false);
+  const activeFaces = faces.data.filter((face) => face.isActive && face.status === 'ACTIVE');
+  const currentReference = activeFaces.find((face) =>
+    String(face.studentId?._id || face.studentId) === studentId
+  );
+
+  const enroll = async (event) => {
+    event.preventDefault();
+    if (!studentId || !file) return;
+    if (currentReference && !window.confirm(
+      'This student already has an active face reference. Continue and replace it with this new enrollment?'
+    )) return;
+    setSaving(true);
+    setMessage('');
+    try {
+      await api.enrollFaceImage(studentId, file);
+      await faces.reload();
+      setMessage('Face enrollment confirmed by the backend.');
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deactivate = async (face) => {
+    if (!window.confirm(`Deactivate the active face reference for ${face.studentId?.name || 'this student'}?`)) return;
+    setMessage('');
+    try {
+      await api.deactivateFaceReference(face._id);
+      await faces.reload();
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+
+  return <>
+    <PageIntro eyebrow="ADMIN / FACE ENROLLMENT" title="Face enrollment">
+      <span>Enrollment images are sent to the real backend provider. Replacing an active reference requires confirmation; verification never falls back to a fake matcher.</span>
+    </PageIntro>
+    <div className="panel enrollment-panel">
+      <form className="form-grid" onSubmit={enroll}>
+        <FormField label="Student">
+          <select required value={studentId} onChange={(event) => setStudentId(event.target.value)}>
+            <option value="">Select student</option>
+            {students.data.map((student) => <option key={student._id} value={student._id}>{student.name} / {student.rollNumber}</option>)}
+          </select>
+        </FormField>
+        <FormField label="Enrollment image">
+          <input required type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+        </FormField>
+        {currentReference && <div className="notice">An active reference exists for this student. Choose another student or confirm replacement when submitting.</div>}
+        <div className="enrollment-note">
+          <strong>Provider: {provider.loading ? 'Checking...' : provider.data?.configured && provider.data?.initialized ? provider.data.engine : 'Unavailable'}</strong>
+          <span>Face embeddings are stored as references; raw enrollment images are not returned by the API.</span>
+        </div>
+        {message && <div className="form-error" role="alert">{message}</div>}
+        <div className="form-actions"><button className="button primary" disabled={saving || !students.data.length || !provider.data?.configured || !provider.data?.initialized}>{saving ? 'Sending...' : 'Enroll face'}</button></div>
+      </form>
+    </div>
+    <section className="panel">
+      <div className="panel-head"><div><p className="eyebrow">REFERENCE MANAGEMENT</p><h3>Enrolled face references</h3></div><button className="button secondary" onClick={faces.reload}>Refresh</button></div>
+      {faces.loading
+        ? <LoadingState label="Loading face references" />
+        : faces.error
+          ? <ErrorState error={faces.error} onRetry={faces.reload} />
+          : <DataTable columns={[
+            { key: 'student', label: 'Student', render: (face) => <>{face.studentId?.name || 'Unknown'}<small className="table-subtext">{face.studentId?.rollNumber || ''}</small></> },
+            { key: 'status', label: 'Status', render: (face) => <StatusBadge value={face.isActive && face.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE'} /> },
+            { key: 'createdAt', label: 'Enrolled', render: (face) => face.createdAt ? new Date(face.createdAt).toLocaleString() : '—' },
+            { key: 'actions', label: 'Actions', render: (face) => face.isActive && face.status === 'ACTIVE'
+              ? <button className="table-action danger" onClick={() => deactivate(face)}>Deactivate</button>
+              : '—' }
+          ]} rows={faces.data} empty="No face references enrolled" />}
+    </section>
+  </>;
+}
 
 export function FaceVerificationTest() {
   const students = useResource(api.students, []); const provider = useResource(api.faceProviderStatus, []); const [studentId, setStudentId] = useState(''); const [file, setFile] = useState(null); const [result, setResult] = useState(null); const [running, setRunning] = useState(false);

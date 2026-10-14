@@ -31,6 +31,17 @@ function assertId(value, name = 'id') {
   if (!mongoose.isValidObjectId(value)) throw new AppError(`Invalid ${name}`, 400);
 }
 
+function normalizeRfidUid(value) {
+  if (typeof value !== 'string') {
+    throw new AppError('RFID UID must be 4, 7, or 10 bytes of hexadecimal characters', 400);
+  }
+  const normalized = value.trim().toUpperCase();
+  if (!/^(?:[0-9A-F]{8}|[0-9A-F]{14}|[0-9A-F]{20})$/.test(normalized)) {
+    throw new AppError('RFID UID must be 4, 7, or 10 bytes of hexadecimal characters', 400);
+  }
+  return normalized;
+}
+
 async function list(type, filters = {}) {
   const item = definition(type);
   const query = {};
@@ -74,6 +85,7 @@ async function create(type, input) {
   const data = { ...input };
   if (type === 'students') {
     if (!data.name || !data.rollNumber || !data.classId || !data.rfidUid) throw new AppError('name, rollNumber, classId, and rfidUid are required', 400);
+    data.rfidUid = normalizeRfidUid(data.rfidUid);
     assertId(data.classId, 'classId');
     if (!await ClassModel.exists({ _id: data.classId, isActive: true })) throw new AppError('Active class not found', 404);
     data.userId = await ensureUser({ ...data, role: 'STUDENT', uniqueValue: data.rollNumber });
@@ -98,6 +110,9 @@ async function update(type, id, input) {
   const data = { ...input };
   delete data._id;
   delete data.userId;
+  if (type === 'students' && data.rfidUid !== undefined) {
+    data.rfidUid = normalizeRfidUid(data.rfidUid);
+  }
   const email = data.email;
   const password = data.password;
   delete data.email;

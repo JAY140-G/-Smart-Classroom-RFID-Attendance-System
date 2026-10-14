@@ -1,12 +1,7 @@
 #include "esp_camera.h"
 #include <HTTPClient.h>
 #include <WiFi.h>
-
-// Replace these placeholders locally before uploading. Do not commit real values.
-const char *WIFI_SSID = "Infinix ZERO 40 5G";
-const char *WIFI_PASSWORD = "jay@1407";
-const char *BACKEND_IMAGE_URL = "http://10.82.135.92:5000/api/camera-test/image";
-const char *CAMERA_TEST_KEY = "47fb504964169114d6d2d6615e997d329ac9931ea795fe7cc371fef2f8364855";
+#include "camera_test_config.h"
 
 const unsigned long WIFI_CONNECT_TIMEOUT_MS = 30000;
 const unsigned long HTTP_TIMEOUT_MS = 15000;
@@ -33,7 +28,7 @@ static camera_config_t cameraConfig() {
   config.pin_reset = -1;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = FRAMESIZE_SVGA;
+  config.frame_size = FRAMESIZE_VGA;
   config.jpeg_quality = 10;
   config.fb_count = psramFound() ? 2 : 1;
   config.fb_location = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
@@ -55,9 +50,9 @@ static bool initializeCamera() {
     return false;
   }
 
-  sensor->set_framesize(sensor, FRAMESIZE_SVGA);
-  sensor->set_quality(sensor, 10);
-  sensor->set_whitebal(sensor, 1);
+  
+  sensor->set_whitebal(sensor, 1);sensor->set_framesize(sensor, FRAMESIZE_VGA);
+  sensor->set_quality(sensor, 12);
   sensor->set_awb_gain(sensor, 1);
   sensor->set_exposure_ctrl(sensor, 1);
   sensor->set_gain_ctrl(sensor, 1);
@@ -122,14 +117,13 @@ static void captureAndPostJpeg() {
 
   http.addHeader("Content-Type", "image/jpeg");
   http.addHeader("X-Camera-Test-Key", CAMERA_TEST_KEY);
-  Serial.printf("Posting JPEG to %s\n", BACKEND_IMAGE_URL);
   const int statusCode = http.POST(frame->buf, frame->len);
   esp_camera_fb_return(frame);
 
-  if (statusCode > 0) {
-    Serial.printf("Backend HTTP status: %d\n", statusCode);
-    Serial.print("Backend response: ");
-    Serial.println(http.getString());
+  if (statusCode == 200) {
+    Serial.println("Camera-test JPEG accepted; this is not a face-verification result.");
+  } else if (statusCode > 0) {
+    Serial.printf("Camera-test upload rejected (HTTP %d).\n", statusCode);
   } else {
     Serial.printf("HTTP upload failed: %s (%d)\n",
         HTTPClient::errorToString(statusCode).c_str(),

@@ -38,7 +38,8 @@ async function sessions(req, res) {
 
 async function scan(req, res) {
   const result = await processScan({
-    ...req.body,
+    rfidUid: req.body.rfidUid,
+    sessionId: req.body.sessionId,
     imageBuffer: req.file?.buffer,
     idempotencyKey: req.idempotencyKey
   });
@@ -107,6 +108,7 @@ async function activity(req, res) {
     _id: event._id,
     student: event.studentId ? { name: event.studentId.name, rollNumber: event.studentId.rollNumber } : null,
     type: event.type,
+    source: event.source || 'RFID',
     timestamp: event.timestamp,
     className: event.sessionId?.classId?.name,
     subjectName: event.sessionId?.subjectId?.name || event.sessionId?.subjectId?.code

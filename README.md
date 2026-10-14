@@ -28,9 +28,9 @@ Phase 6 adds a real local WASM face engine using `@vladmandic/face-api` and Tens
 ```text
 RFID scan
 	-> ESP32 identifies RFID UID
-	-> Backend identifies the student
-	-> ESP32-CAM captures face
-	-> Backend performs 1:1 face verification
+	-> Backend creates a short-lived, opaque camera scan request
+	-> ESP32-CAM polls for that scan ID and captures a fresh JPEG
+	-> Backend resolves the RFID student and verifies against that student's enrolled face
 	-> Active timetable/session is checked
 	-> Current state determines ENTRY or EXIT
 	-> Attendance event and live state are updated
@@ -38,6 +38,8 @@ RFID scan
 ```
 
 Invalid RFID or failed face verification rejects the scan without creating an event or changing state.
+
+The live two-board firmware, RC522 wiring, LAN setup, and exact test commands are documented in [the live RFID + ESP32-CAM guide](docs/hardware/LIVE_RFID_FACE_SCAN.md). The camera connectivity-test sketch and `/api/camera-test/image` endpoint remain separate and do not perform verification or attendance.
 
 ## Live State and Final Status
 

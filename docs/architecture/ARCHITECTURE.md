@@ -101,14 +101,16 @@ sequenceDiagram
     participant Verify as Face Verification
 
     Student->>RFID: Scan card
-    RFID->>Backend: Send RFID UID
-    Backend->>Backend: Resolve student and active session
-    Backend->>Camera: Request face capture
-    Camera->>Backend: Send captured image
+    RFID->>Backend: Create expiring scan request (UID + idempotency key)
+    Camera->>Backend: Poll camera queue
+    Backend-->>Camera: Opaque scan ID (no UID/student data)
+    Camera->>Backend: Fresh JPEG + scan ID (one-time claim)
+    Backend->>Backend: Resolve active student and face reference
     Backend->>Verify: Compare with student's face reference
     Verify-->>Backend: Verification result
-    Backend->>Backend: Determine ENTRY or EXIT from current state
-    Backend-->>RFID: Accept or reject result
+    Backend->>Backend: On match, run existing ENTRY/EXIT state machine
+    RFID->>Backend: Poll scan result
+    Backend-->>RFID: Safe success or rejection status
 ```
 
 A failed RFID lookup or failed face verification input creates no movement event and does not change the student's current state. Actual face comparison is not implemented in Phase 3.

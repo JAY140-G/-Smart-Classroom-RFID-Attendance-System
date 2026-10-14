@@ -32,6 +32,13 @@ const studentSchema = new mongoose.Schema({
     trim: true,
     uppercase: true
   },
+  virtualRfidUid: {
+    type: String,
+    trim: true,
+    uppercase: true,
+    unique: true,
+    sparse: true
+  },
   isActive: {
     type: Boolean,
     default: true

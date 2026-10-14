@@ -9,7 +9,7 @@ const navGroups = [
   { label: 'Admin', items: [
     { label: 'Setup center', to: '/admin/setup' }, { label: 'Students', to: '/admin/students' }, { label: 'Teachers', to: '/admin/teachers' },
     { label: 'Subjects', to: '/admin/subjects' }, { label: 'Classes', to: '/admin/classes' },
-  { label: 'Timetable', to: '/admin/timetable' }, { label: 'Start attendance', to: '/admin/start-attendance' }, { label: 'Live attendance', to: '/admin/live-attendance' },
+  { label: 'Timetable', to: '/admin/timetable' }, { label: 'Start attendance', to: '/admin/start-attendance' }, { label: 'Live attendance', to: '/admin/live-attendance' }, { label: 'Virtual RFID console', to: '/admin/virtual-rfid' },
   { label: 'Face enrollment', to: '/admin/face-enrollment' }, { label: 'Verification test', to: '/admin/face-verification-test' }, { label: 'Reports', to: '/admin/reports' }
   ] },
   { label: 'Teaching', items: [

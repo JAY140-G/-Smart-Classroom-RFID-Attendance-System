@@ -34,7 +34,7 @@ function allowRoles(...roles) {
 function requireDeviceKey(req, res, next) {
   const configuredKey = process.env.AUTH_DEVICE_KEY;
   if (typeof configuredKey !== 'string' || configuredKey.length < 32) {
-    return next(new AppError('Attendance device authentication is not configured', 503));
+    return next(new AppError('Attendance device authentication is not configured', 503, { expose: true }));
   }
   const suppliedKey = req.get('X-Attendance-Device-Key');
   if (typeof suppliedKey !== 'string') return next(new AppError('Attendance device authentication required', 401));

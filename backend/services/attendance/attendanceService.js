@@ -18,9 +18,17 @@ const TRANSITIONS = {
   OUTSIDE: { type: 'ENTRY', nextState: 'IN_CLASS' }
 };
 
-function receiptResponse(receipt, { rfidUid, studentId, sessionId }) {
+function receiptResponse(receipt, {
+  rfidUid,
+  studentId,
+  sessionId,
+  source = 'RFID',
+  virtualRfidUid
+}) {
   const matchesIdentity = receipt.rfidUid === rfidUid
-    && String(receipt.studentId) === String(studentId);
+    && String(receipt.studentId) === String(studentId)
+    && (receipt.source || 'RFID') === source
+    && (receipt.virtualRfidUid || '') === (virtualRfidUid || '');
   const matchesSession = String(receipt.sessionId) === String(sessionId);
   if (!matchesIdentity || !matchesSession) {
     throw new AppError('Idempotency-Key was already used for a different scan', 409);
@@ -73,28 +81,73 @@ async function findOrCreateRecord(student, session, transactionSession) {
   }
 }
 
-async function processScan({ rfidUid, faceVerified, imageBuffer, sessionId, idempotencyKey }) {
-  if (typeof rfidUid !== 'string' || !rfidUid.trim()) throw new AppError('rfidUid is required', 400);
+async function processScan({
+  rfidUid,
+  studentId,
+  virtualRfidUid,
+  source = 'RFID',
+  imageBuffer,
+  sessionId,
+  idempotencyKey
+}) {
+  if (!['RFID', 'VIRTUAL'].includes(source)) {
+    throw new AppError('Unsupported attendance scan source', 400);
+  }
+  if (source === 'RFID' && (typeof rfidUid !== 'string' || !rfidUid.trim())) {
+    throw new AppError('rfidUid is required', 400);
+  }
+  if (source === 'VIRTUAL' && (
+    !mongoose.isValidObjectId(studentId)
+    || typeof virtualRfidUid !== 'string'
+    || !/^V-[0-9A-F]{24}$/.test(virtualRfidUid)
+  )) {
+    throw new AppError('A valid virtual student identity is required', 400);
+  }
   if (typeof idempotencyKey !== 'string') throw new AppError('A valid UUID Idempotency-Key header is required', 400);
 
-  const normalizedRfidUid = rfidUid.trim().toUpperCase();
+  const normalizedVirtualUid = source === 'VIRTUAL'
+    ? virtualRfidUid.trim().toUpperCase()
+    : undefined;
+  const normalizedRfidUid = source === 'RFID'
+    ? rfidUid.trim().toUpperCase()
+    : undefined;
   const normalizedIdempotencyKey = idempotencyKey.toLowerCase();
-  const student = await Student.findOne({ rfidUid: normalizedRfidUid, isActive: true });
-  if (!student) throw new AppError('RFID not recognized', 404);
-
+  const student = source === 'RFID'
+    ? await Student.findOne({ rfidUid: normalizedRfidUid, isActive: true })
+    : await Student.findOne({
+      _id: studentId,
+      virtualRfidUid: normalizedVirtualUid,
+      isActive: true
+    });
+  if (!student) {
+    const error = new AppError('RFID not recognized', 404);
+    error.reason = 'RFID_NOT_RECOGNIZED';
+    throw error;
+  }
+  const receiptRfidUid = student.rfidUid.trim().toUpperCase();
   if (sessionId && !mongoose.isValidObjectId(sessionId)) throw new AppError('Invalid session id', 400);
   const receiptIdentity = {
-    rfidUid: normalizedRfidUid,
+    rfidUid: receiptRfidUid,
     studentId: student._id,
-    sessionId
+    sessionId,
+    source,
+    virtualRfidUid: normalizedVirtualUid
   };
   const existingReceipt = await AttendanceScanReceipt.findOne({ idempotencyKey: normalizedIdempotencyKey });
   if (existingReceipt) return replayReceipt(existingReceipt, receiptIdentity, student);
 
-  const faceReference = await FaceReference.findOne({ studentId: student._id, isActive: true }).select('+referenceData');
-  const verification = await verifyFace({ student, imageBuffer, referenceData: faceReference?.referenceData, faceVerified });
+  const faceReference = await FaceReference.findOne({
+    studentId: student._id,
+    isActive: true,
+    status: 'ACTIVE'
+  }).select('+referenceData');
+  const verification = await verifyFace({ student, imageBuffer, referenceData: faceReference?.referenceData });
   if (!verification.configured) throw new AppError(verification.message, 503);
-  if (!verification.verified) throw new AppError('Face verification failed', 403);
+  if (!verification.verified) {
+    const error = new AppError('Face verification failed', 403);
+    error.reason = verification.reason || verification.status;
+    throw error;
+  }
 
   let session;
   if (sessionId) {
@@ -102,11 +155,17 @@ async function processScan({ rfidUid, faceVerified, imageBuffer, sessionId, idem
   } else {
     session = await getActiveSession({ classId: student.classId });
   }
-  if (!session) throw new AppError('No active attendance session found', 404);
+  if (!session) {
+    const error = new AppError('No active attendance session found', 404);
+    error.reason = 'NO_ACTIVE_SESSION';
+    throw error;
+  }
   const sessionClassId = session.classId._id || session.classId;
   const sessionSubjectId = session.subjectId._id || session.subjectId;
   if (String(sessionClassId) !== String(student.classId)) {
-    throw new AppError('Student does not belong to this session class', 403);
+    const error = new AppError('Student does not belong to this session class', 403);
+    error.reason = 'SESSION_CLASS_MISMATCH';
+    throw error;
   }
 
   let scanResult;
@@ -156,6 +215,8 @@ async function processScan({ rfidUid, faceVerified, imageBuffer, sessionId, idem
         type: transition.type,
         timestamp: new Date(),
         rfidUid: student.rfidUid,
+        source,
+        ...(normalizedVirtualUid ? { virtualRfidUid: normalizedVirtualUid } : {}),
         faceVerified: true,
         verificationStatus: 'VERIFIED'
       }], { session: transactionSession });
@@ -176,9 +237,11 @@ async function processScan({ rfidUid, faceVerified, imageBuffer, sessionId, idem
       };
       await AttendanceScanReceipt.create([{
         idempotencyKey: normalizedIdempotencyKey,
-        rfidUid: normalizedRfidUid,
+        rfidUid: receiptRfidUid,
         studentId: student._id,
         sessionId: activeSession._id,
+        source,
+        ...(normalizedVirtualUid ? { virtualRfidUid: normalizedVirtualUid } : {}),
         response
       }], { session: transactionSession });
       scanResult = { student, session, record: updatedRecord, event, attendance };

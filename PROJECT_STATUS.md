@@ -168,3 +168,10 @@
 - [x] Added local endpoint regression tests for authentication, missing/invalid JPEG, successful receipt, and request-size rejection; added Windows LAN/IP, backend, Arduino upload, and serial-monitor instructions in `docs/hardware/ESP32_CAM_BACKEND_TEST.md`.
 - Remaining manual step: configure temporary Wi-Fi values, the PC's current LAN address, and a dedicated temporary `CAMERA_TEST_KEY` locally; upload and run the sketch while the backend is available on the same LAN. Do not reuse the attendance device key or commit local credentials.
 - Verification: backend tests passed (34/34), including seven database-free HTTP route tests; frontend tests passed (7/7); frontend production build passed; `node --check` passed for changed backend JavaScript; `git diff --check` passed. The backend route test uses an in-process local server and synthetic JPEG marker bytes, not the physical ESP32-CAM. No live ESP32-CAM-to-backend test has been performed.
+
+### Live RFID + ESP32-CAM Verification Flow (2026-10-09)
+- [x] Added authenticated expiring scan requests, opaque camera polling, one-time JPEG claim, safe result polling, and MongoDB TTL cleanup.
+- [x] Wired successful camera uploads into the existing `processScan()` and real `verifyFace()` path; client-supplied face-verification flags are ignored.
+- [x] Added ESP32 DevKit + RC522 and AI Thinker ESP32-CAM sketches plus wiring/LAN/API instructions in `docs/hardware/LIVE_RFID_FACE_SCAN.md`.
+- [x] Replaced populated values in the camera-test sketch with local placeholders; the camera-test endpoint remains separate from attendance verification.
+- Verification: backend tests passed (59/59), including live-scan HTTP/service tests, duplicate-upload race coverage, and no-attendance-on-verification-failure regressions. Arduino CLI is unavailable in this environment; both sketches have not been compiled or uploaded. MongoDB, real face engine/reference, physical RFID, camera capture, LAN communication, and end-to-end hardware attendance remain untested.
